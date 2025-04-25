@@ -25,7 +25,7 @@
 #define BEAR_WALK_TURN     (2 * DEG_1) // = 364
 #define BEAR_EAT_RANGE     SQUARE(WALL_L * 3 / 4) // = 589824
 #if TR_VERSION == 1
-#define BEAR_HITPOINTS     20
+#define BEAR_HITPOINTS     25
 #else
 #define BEAR_HITPOINTS     30
 #endif

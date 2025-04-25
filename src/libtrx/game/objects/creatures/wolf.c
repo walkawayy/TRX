@@ -22,7 +22,7 @@
 #define WOLF_HOWL_CHANCE   384
 #define WOLF_TOUCH         0x774F
 #if TR_VERSION == 1
-#define WOLF_HITPOINTS     6
+#define WOLF_HITPOINTS     8
 #else
 #define WOLF_HITPOINTS     10
 #endif

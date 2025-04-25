@@ -5,7 +5,7 @@
 #include "game/room.h"
 #include "global/vars.h"
 
-#define LAVA_WEDGE_SPEED 25
+#define LAVA_WEDGE_SPEED 10
 
 static void M_Setup(OBJECT *obj);
 static void M_Control(int16_t item_num);

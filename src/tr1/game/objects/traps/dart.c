@@ -7,7 +7,7 @@
 #include "game/spawn.h"
 #include "global/vars.h"
 
-#define DART_DAMAGE 50
+#define DART_DAMAGE 350
 
 static void M_Setup(OBJECT *obj);
 static void M_Control(int16_t item_num);

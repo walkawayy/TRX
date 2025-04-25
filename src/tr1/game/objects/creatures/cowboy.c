@@ -9,12 +9,12 @@
 
 #include <libtrx/utils.h>
 
-#define COWBOY_SHOT_DAMAGE 70
+#define COWBOY_SHOT_DAMAGE 150
 #define COWBOY_WALK_TURN (DEG_1 * 3) // = 546
 #define COWBOY_RUN_TURN (DEG_1 * 6) // = 1092
 #define COWBOY_WALK_RANGE SQUARE(WALL_L * 3) // = 9437184
 #define COWBOY_DIE_ANIM 7
-#define COWBOY_HITPOINTS 150
+#define COWBOY_HITPOINTS 200
 #define COWBOY_RADIUS (WALL_L / 10) // = 102
 #define COWBOY_SMARTNESS 0x7FFF
 

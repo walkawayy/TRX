@@ -4,7 +4,7 @@
 
 #include <libtrx/game/math.h>
 
-#define EMBER_DAMAGE 10
+#define EMBER_DAMAGE 100
 
 static void M_Setup(OBJECT *obj);
 static void M_Control(int16_t effect_num);

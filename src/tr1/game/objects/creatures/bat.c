@@ -10,9 +10,9 @@
 
 #include <libtrx/utils.h>
 
-#define BAT_ATTACK_DAMAGE 2
+#define BAT_ATTACK_DAMAGE 5
 #define BAT_TURN (20 * DEG_1) // = 3640
-#define BAT_HITPOINTS 1
+#define BAT_HITPOINTS 5
 #define BAT_RADIUS (WALL_L / 10) // = 102
 #define BAT_SMARTNESS 0x400
 

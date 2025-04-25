@@ -11,8 +11,8 @@
 
 #include <libtrx/utils.h>
 
-#define RAT_BITE_DAMAGE 20
-#define RAT_CHARGE_DAMAGE 20
+#define RAT_BITE_DAMAGE 50
+#define RAT_CHARGE_DAMAGE 50
 #define RAT_TOUCH 0x300018F
 #define RAT_DIE_ANIM 8
 #define RAT_RUN_TURN (DEG_1 * 6) // = 1092

@@ -13,7 +13,7 @@
 #include <libtrx/config.h>
 #include <libtrx/game/math.h>
 
-#define NATLA_SHOT_DAMAGE 100
+#define NATLA_SHOT_DAMAGE 200
 #define NATLA_NEAR_DEATH 200
 #define NATLA_FLY_MODE 0x8000
 #define NATLA_TIMER 0x7FFF
@@ -22,7 +22,7 @@
 #define NATLA_RUN_TURN (DEG_1 * 6) // = 1092
 #define NATLA_LAND_CHANCE 256
 #define NATLA_DIE_TIME (LOGIC_FPS * 16) // = 480
-#define NATLA_GUN_SPEED 400
+#define NATLA_GUN_SPEED 650
 #define NATLA_HITPOINTS 400
 #define NATLA_RADIUS (WALL_L / 5) // = 204
 #define NATLA_SMARTNESS 0x7FFF
