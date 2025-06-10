@@ -74,14 +74,18 @@ static void M_Control(const int16_t item_num)
         Item_Kill(item_num);
         item->status = IS_DEACTIVATED;
 
-        int16_t centaur_item_num = *(int16_t *)item->data;
-        ITEM *const centaur = Item_Get(centaur_item_num);
-        centaur->touch_bits = 0;
-        Item_AddActive(centaur_item_num);
-        LOT_EnableBaddieAI(centaur_item_num, 1);
-        centaur->status = IS_ACTIVE;
-
-        Sound_Effect(SFX_ATLANTEAN_EXPLODE, &centaur->pos, SPM_NORMAL);
+        OBJECT *const obj = Object_Get(O_CENTAUR);
+        if (obj->loaded) {
+            int16_t centaur_item_num = *(int16_t *)item->data;
+            ITEM *const centaur = Item_Get(centaur_item_num);
+            centaur->touch_bits = 0;
+            Item_AddActive(centaur_item_num);
+            LOT_EnableBaddieAI(centaur_item_num, 1);
+            centaur->status = IS_ACTIVE;
+            Sound_Effect(SFX_ATLANTEAN_EXPLODE, &centaur->pos, SPM_NORMAL);
+        } else {
+            Sound_Effect(SFX_ATLANTEAN_EXPLODE, &item->pos, SPM_NORMAL);
+        }
     }
 }
 
