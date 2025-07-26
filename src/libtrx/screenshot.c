@@ -41,7 +41,7 @@ static char *M_CleanScreenshotTitle(const char *const source)
             continue;
         }
 
-        const size_t char_size = String_GetCharByteSize(out);
+        const size_t char_size = String_GetCharByteSize(source + i);
         if (char_size != 1
             || strchr(sensitive_characters, source[i]) == nullptr) {
             memcpy(out, source + i, char_size);
