@@ -6,6 +6,7 @@
 #include <trx/game/matrix.h>
 #include <trx/game/rooms.h>
 #include <trx/utils.h>
+#include <trx/version.h>
 
 #define M_HEADROOM 160 // Additional collision space above Lara's head.
 
@@ -69,6 +70,78 @@ static void M_FillSide(
         } else if (
             coll->lava_is_pit && side->floor > 0
             && Room_GetPitSector(sector, x_pos, z_pos)->is_death_sector) {
+            side->floor = STEP_L * 2;
+        }
+    } else if (sim_wall) {
+        side->floor = NO_HEIGHT;
+        side->ceiling = NO_HEIGHT;
+    }
+}
+
+static void M_FillSideFrontTR3(
+    const COLL_INFO *const coll, COLL_SIDE *const side,
+    const COLL_SIDE *const side_mid, const int32_t x_pos, const int32_t x_front,
+    const int32_t z_pos, const int32_t z_front, const int32_t y_pos,
+    const int32_t obj_height, int16_t *const room_num)
+{
+    const int32_t y = y_pos - obj_height;
+    const int32_t y_top = y - M_HEADROOM;
+
+    int16_t local_room_num = *room_num;
+    int16_t *const test_room_num =
+        g_Config.gameplay.wall_glitch_mode == WALL_GLITCH_FIXED
+        ? &local_room_num
+        : room_num;
+
+    const SECTOR *const sector =
+        Room_GetSector(x_pos + x_front, y_top, z_pos + z_front, test_room_num);
+    int32_t height =
+        Room_GetHeight(sector, x_pos + x_front, y_top, z_pos + z_front);
+    int32_t ceiling =
+        Room_GetCeiling(sector, x_pos + x_front, y_top, z_pos + z_front);
+    const int32_t room_height = height;
+    const int32_t room_ceiling = ceiling;
+    const bool sim_wall = room_height == ceiling && room_height != NO_HEIGHT
+        && sector->ceiling.tilt == 0 && sector->floor.tilt == 0;
+    if (height != NO_HEIGHT) {
+        height -= y_pos;
+    }
+    if (ceiling != NO_HEIGHT) {
+        ceiling -= y;
+    }
+
+    side->floor = height;
+    side->ceiling = ceiling;
+    side->type = Room_GetHeightType();
+
+    // Extra TR3 front probe.
+    const SECTOR *const sector_2 = Room_GetSector(
+        x_pos + x_front + x_front, y_top, z_pos + z_front + z_front,
+        test_room_num);
+    int32_t height_2 = Room_GetHeight(
+        sector_2, x_pos + x_front + x_front, y_top, z_pos + z_front + z_front);
+
+    if (height_2 != NO_HEIGHT) {
+        height_2 -= y_pos;
+    }
+
+    const bool is_on_walkable =
+        M_IsOnWalkable(sector_2, x_pos, y_top, z_pos, room_height);
+    if (!is_on_walkable) {
+        if (coll->slopes_are_walls
+            && (side->type == HT_BIG_SLOPE || side->type == HT_DIAGONAL)
+            && side->floor < side_mid->floor && height_2 < side->floor
+            && side->floor < 0) {
+            side->floor = -32767;
+        } else if (
+            coll->slopes_are_pits
+            && (side->type == HT_BIG_SLOPE || side->type == HT_DIAGONAL)
+            && side->floor > side_mid->floor) {
+            side->floor = STEP_L * 2;
+        } else if (
+            coll->lava_is_pit && side->floor > 0
+            && Room_GetPitSector(sector_2, x_pos, z_pos)->is_death_sector) {
+            // TODO Add && trigger_index to if check.
             side->floor = STEP_L * 2;
         }
     } else if (sim_wall) {
@@ -217,18 +290,33 @@ void Collide_GetCollisionInfo(
     COLL_INFO *const coll, const int32_t x_pos, const int32_t y_pos,
     const int32_t z_pos, int16_t room_num, int32_t obj_height)
 {
-    coll->coll_type = COLL_NONE;
-    coll->shift.x = 0;
-    coll->shift.y = 0;
-    coll->shift.z = 0;
-    coll->quadrant = Math_GetDirection(coll->facing);
-
     bool reset_room = false;
     int16_t prev_room_num = room_num;
     if (obj_height < 0) {
         reset_room = true;
         obj_height = -obj_height;
     }
+
+    coll->coll_type = COLL_NONE;
+    coll->shift.x = 0;
+    coll->shift.y = 0;
+    coll->shift.z = 0;
+    coll->quadrant = Math_GetDirection(coll->facing);
+
+    // TR3 samples two additional points on each side (wider than the normal
+    // left/right probes). This reduces jitter when Lara is straddling sector
+    // edges/diagonals.
+    // These extra probes depend only on collision facing and Lara's actual
+    // yaw. TR3 uses a slightly different sampling angle when Lara is rotating
+    // significantly relative to movement.
+    // const ITEM *const lara_item = Lara_GetItem();
+    // const int16_t rot_delta = (int16_t)ABS(lara_item->rot.y - coll->facing);
+    // const int16_t side_ang = rot_delta > 0x7000 ? 0x3000 : 0x4000;
+    // int32_t x_right2 = (250 * Math_Sin(coll->facing + side_ang)) >>
+    // W2V_SHIFT; int32_t z_right2 = (250 * Math_Cos(coll->facing + side_ang))
+    // >> W2V_SHIFT; int32_t x_left2 = (250 * Math_Sin(coll->facing - side_ang))
+    // >> W2V_SHIFT; int32_t z_left2 = (250 * Math_Cos(coll->facing - side_ang))
+    // >> W2V_SHIFT;
 
     int32_t x = x_pos;
     int32_t z = z_pos;
@@ -249,6 +337,7 @@ void Collide_GetCollisionInfo(
     coll->side_mid.floor = height;
     coll->side_mid.ceiling = ceiling;
     coll->side_mid.type = Room_GetHeightType();
+    // coll->trigger = trigger_index;
 
     bool is_on_walkable = M_IsOnWalkable(sector, x, y_top, z, room_height);
     if (is_on_walkable) {
@@ -261,12 +350,12 @@ void Collide_GetCollisionInfo(
         coll->tilt_x = (int8_t)tilt;
     }
 
-    int32_t x_left;
-    int32_t z_left;
-    int32_t x_right;
-    int32_t z_right;
-    int32_t x_front;
-    int32_t z_front;
+    int32_t x_left = 0;
+    int32_t z_left = 0;
+    int32_t x_right = 0;
+    int32_t z_right = 0;
+    int32_t x_front = 0;
+    int32_t z_front = 0;
     switch (coll->quadrant) {
     case DIR_NORTH:
         x_front = (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT;
@@ -318,16 +407,44 @@ void Collide_GetCollisionInfo(
         room_num = prev_room_num;
     }
 
-    M_FillSide(
-        coll, &coll->side_front, x_pos + x_front, z_pos + z_front, y_pos,
-        obj_height, &room_num);
+    if (g_TRVersion <= 2) {
+        M_FillSide(
+            coll, &coll->side_front, x_pos + x_front, z_pos + z_front, y_pos,
+            obj_height, &room_num);
+    } else {
+        // TR3 performs an additional front probe for the floor. This
+        // is used to treat some downhill slopes as walls when the height
+        // continues to drop further ahead.
+        M_FillSideFrontTR3(
+            coll, &coll->side_front, &coll->side_mid, x_pos, x_front, z_pos,
+            z_front, y_pos, obj_height, &room_num);
+    }
+
     M_FillSide(
         coll, &coll->side_left, x_pos + x_left, z_pos + z_left, y_pos,
         obj_height, &room_num);
+
     M_FillSide(
         coll, &coll->side_right, x_pos + x_right, z_pos + z_right, y_pos,
         obj_height, &room_num);
-    // TODO: TR3 uses an extra left and right side, purpose to be investigated.
+
+    // // TODO: TR3 uses an extra left and right side, purpose to be
+    // investigated.
+    // // Extra TR3-style left/right probes. They set hit_right/hit_left but
+    // aren't used. int16_t room_num2 = room_num; M_FillSide(
+    //     coll, &coll->side_front_left, x_pos + x_left2, z_pos + z_left2,
+    //     y_pos, obj_height, &room_num2);
+    // const bool left_front_bad = coll->side_front_left.floor > coll->bad_pos
+    //     || coll->side_front_left.floor < coll->bad_neg
+    //     || coll->side_front_left.ceiling > coll->bad_ceiling;
+
+    // room_num2 = room_num;
+    // M_FillSide(
+    //     coll, &coll->side_front_right, x_pos + x_right2, z_pos + z_right2,
+    //     y_pos, obj_height, &room_num2);
+    // const bool right_front_bad = coll->side_front_right.floor > coll->bad_pos
+    //     || coll->side_front_right.floor < coll->bad_neg
+    //     || coll->side_front_right.ceiling > coll->bad_ceiling;
 
     if (Collide_CollideStaticObjects(
             coll, x_pos, y_pos, z_pos, room_num, obj_height)) {
@@ -406,7 +523,8 @@ void Collide_GetCollisionInfo(
     }
 
     if (coll->side_left.floor > coll->bad_pos
-        || coll->side_left.floor < coll->bad_neg) {
+        || coll->side_left.floor < coll->bad_neg
+        || coll->side_left.ceiling > coll->bad_ceiling) {
         if (coll->side_left.type == HT_SPLIT_TRI) {
             coll->shift.x = coll->old.x - x;
             coll->shift.z = coll->old.z - z;
@@ -434,7 +552,8 @@ void Collide_GetCollisionInfo(
     }
 
     if (coll->side_right.floor > coll->bad_pos
-        || coll->side_right.floor < coll->bad_neg) {
+        || coll->side_right.floor < coll->bad_neg
+        || coll->bad_ceiling < coll->side_right.ceiling) {
         if (coll->side_right.type == HT_SPLIT_TRI) {
             coll->shift.x = coll->old.x - x;
             coll->shift.z = coll->old.z - z;
