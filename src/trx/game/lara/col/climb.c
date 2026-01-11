@@ -229,7 +229,7 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     coll->bad_neg = NO_BAD_NEG;
     coll->bad_ceiling = 0;
     Lara_Col_GetInfo(item, coll);
-    const bool flag = coll->side_front.floor < 200;
+    const bool initial_front_close = coll->side_front.floor < 200;
 
     item->gravity = false;
     item->fall_speed = 0;
@@ -247,6 +247,12 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = 0;
     Lara_Col_GetInfo(item, coll);
+
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    const bool front_close = diagonal_ledge ? false : initial_front_close;
+    const bool valid_coll_type = coll->coll_type == COLL_FRONT
+        || (diagonal_ledge
+            && (coll->coll_type == COLL_LEFT || coll->coll_type == COLL_RIGHT));
 
     if (lara->climb_status) {
         if (!g_Input.action || item->hit_points <= 0) {
@@ -292,7 +298,7 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     }
 
     if (!g_Input.action || item->hit_points <= 0
-        || coll->side_front.floor > 0) {
+        || (coll->side_front.floor > 0 && !diagonal_ledge)) {
         item->goal_anim_state = LS(LS_JUMP_UP);
         item->current_anim_state = LS(LS_JUMP_UP);
         Item_SwitchToAnim(item, LA(LA_JUMP_UP), M_LF_STOP_HANG);
@@ -315,8 +321,8 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     const int32_t hdif = coll->side_front.floor - bounds->min.y;
 
     if ((ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
-         && !Lara_Col_IsDiagonalLedge(coll))
-        || coll->side_mid.ceiling >= 0 || coll->coll_type != COLL_FRONT || flag
+         && !diagonal_ledge)
+        || coll->side_mid.ceiling >= 0 || !valid_coll_type || front_close
         || coll->hit_static || hdif < -SLOPE_DIF || hdif > SLOPE_DIF) {
         item->pos = coll->old;
         if (item->current_anim_state == LS(LS_SHIMMY_LEFT)
@@ -328,19 +334,24 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
-    switch (dir) {
-    case DIR_NORTH:
-    case DIR_SOUTH:
-        item->pos.z += coll->shift.z;
-        break;
-
-    case DIR_EAST:
-    case DIR_WEST:
+    if (diagonal_ledge) {
         item->pos.x += coll->shift.x;
-        break;
+        item->pos.z += coll->shift.z;
+    } else {
+        switch (dir) {
+        case DIR_NORTH:
+        case DIR_SOUTH:
+            item->pos.z += coll->shift.z;
+            break;
 
-    default:
-        break;
+        case DIR_EAST:
+        case DIR_WEST:
+            item->pos.x += coll->shift.x;
+            break;
+
+        default:
+            break;
+        }
     }
 
     if (g_TRVersion >= 2 || (hdif >= -STEP_L && hdif <= STEP_L)) {
