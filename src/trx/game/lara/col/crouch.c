@@ -355,11 +355,17 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_direction = diagonal_ledge && dir == DIR_UNKNOWN;
+    if (diagonal_direction) {
+        dir = Math_GetDirection(item->rot.y);
+    }
     if (dir == DIR_UNKNOWN) {
         return;
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
+    const int16_t angle =
+        diagonal_ledge ? item->rot.y : Math_DirectionToAngle(dir);
 
     if (Lara_Col_TestHangSwingIn(item, angle)) {
         lara->head_rot.x = 0;
@@ -379,33 +385,38 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
     if (edge_catch == EDGE_CATCH_POS) {
         item->pos.y += coll->side_front.floor - bounds->min.y;
 
-        switch (Math_GetDirection(item->rot.y)) {
-        case DIR_NORTH:
-            item->pos.z =
-                ROUND_TO_SECTOR_END(item->pos.z) - M_CRAWL_TO_HANG_XZ_OFFSET;
+        if (diagonal_ledge) {
             item->pos.x += coll->shift.x;
-            break;
-
-        case DIR_EAST:
-            item->pos.x =
-                ROUND_TO_SECTOR_END(item->pos.x) - M_CRAWL_TO_HANG_XZ_OFFSET;
             item->pos.z += coll->shift.z;
-            break;
+        } else {
+            switch (Math_GetDirection(item->rot.y)) {
+            case DIR_NORTH:
+                item->pos.z =
+                    ROUND_TO_SECTOR_END(item->pos.z) - M_CRAWL_TO_HANG_XZ_OFFSET;
+                item->pos.x += coll->shift.x;
+                break;
 
-        case DIR_SOUTH:
-            item->pos.z =
-                ROUND_TO_SECTOR(item->pos.z) + M_CRAWL_TO_HANG_XZ_OFFSET;
-            item->pos.x += coll->shift.x;
-            break;
+            case DIR_EAST:
+                item->pos.x =
+                    ROUND_TO_SECTOR_END(item->pos.x) - M_CRAWL_TO_HANG_XZ_OFFSET;
+                item->pos.z += coll->shift.z;
+                break;
 
-        case DIR_WEST:
-            item->pos.x =
-                ROUND_TO_SECTOR(item->pos.x) + M_CRAWL_TO_HANG_XZ_OFFSET;
-            item->pos.z += coll->shift.z;
-            break;
+            case DIR_SOUTH:
+                item->pos.z =
+                    ROUND_TO_SECTOR(item->pos.z) + M_CRAWL_TO_HANG_XZ_OFFSET;
+                item->pos.x += coll->shift.x;
+                break;
 
-        default:
-            break;
+            case DIR_WEST:
+                item->pos.x =
+                    ROUND_TO_SECTOR(item->pos.x) + M_CRAWL_TO_HANG_XZ_OFFSET;
+                item->pos.z += coll->shift.z;
+                break;
+
+            default:
+                break;
+            }
         }
     } else {
         item->pos.y = edge - bounds->min.y;

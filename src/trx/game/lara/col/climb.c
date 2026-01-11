@@ -238,22 +238,10 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
 
     const DIRECTION dir = Math_GetDirection(item->rot.y);
     const int32_t hang_test_shift = g_TRVersion >= 3 ? 4 : 2;
-    switch (dir) {
-    case DIR_NORTH:
-        item->pos.z += hang_test_shift;
-        break;
-    case DIR_EAST:
-        item->pos.x += hang_test_shift;
-        break;
-    case DIR_SOUTH:
-        item->pos.z -= hang_test_shift;
-        break;
-    case DIR_WEST:
-        item->pos.x -= hang_test_shift;
-        break;
-    default:
-        break;
-    }
+    item->pos.x +=
+        (Math_Sin(item->rot.y) * hang_test_shift) >> W2V_SHIFT;
+    item->pos.z +=
+        (Math_Cos(item->rot.y) * hang_test_shift) >> W2V_SHIFT;
 
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = -STEPUP_HEIGHT;
@@ -326,7 +314,8 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
     const int32_t hdif = coll->side_front.floor - bounds->min.y;
 
-    if (ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
+    if ((ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
+         && !Lara_Col_IsDiagonalLedge(coll))
         || coll->side_mid.ceiling >= 0 || coll->coll_type != COLL_FRONT || flag
         || coll->hit_static || hdif < -SLOPE_DIF || hdif > SLOPE_DIF) {
         item->pos = coll->old;
