@@ -871,7 +871,11 @@ bool Lara_Col_TestVault(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, M_VAULT_ANGLE);
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    DIRECTION dir = Math_GetDirectionCone(item->rot.y, M_VAULT_ANGLE);
+    if (dir == DIR_UNKNOWN && diagonal_ledge) {
+        dir = Math_GetDirection(item->rot.y);
+    }
     if (dir == DIR_UNKNOWN) {
         return false;
     }
@@ -883,7 +887,8 @@ bool Lara_Col_TestVault(ITEM *const item, COLL_INFO *const coll)
     const int32_t right_ceiling = coll->side_right2.ceiling;
     const int32_t front_floor = coll->side_front.floor;
     const int32_t front_ceiling = coll->side_front.ceiling;
-    const bool slope = ABS(left_floor - right_floor) >= SLOPE_DIF;
+    const bool slope =
+        !diagonal_ledge && ABS(left_floor - right_floor) >= SLOPE_DIF;
     const int32_t mid = STEP_L / 2;
     const ROOM *const room = Room_Get(item->room_num);
 
