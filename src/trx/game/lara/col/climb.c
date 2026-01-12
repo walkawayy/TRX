@@ -533,8 +533,6 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
     }
 
     const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
-    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
-        || coll->side_front.type == HT_SPLIT_TRI;
     const bool front_clear =
         coll->side_front.floor - coll->side_front.ceiling >= 0;
     const bool side_clear =
