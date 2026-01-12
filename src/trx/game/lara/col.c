@@ -136,14 +136,17 @@ bool Lara_Col_IsDiagonalLedge(const COLL_INFO *const coll)
 
     const int32_t left_floor = coll->side_left2.floor;
     const int32_t right_floor = coll->side_right2.floor;
-    const bool left_void = left_floor == NO_HEIGHT;
-    const bool right_void = right_floor == NO_HEIGHT;
-
-    if (left_void != right_void) {
-        return true;
+    if (left_floor == NO_HEIGHT || right_floor == NO_HEIGHT) {
+        return false;
     }
 
-    if (left_void || right_void) {
+    const int32_t front_floor = coll->side_front.floor;
+    if (front_floor == NO_HEIGHT) {
+        return false;
+    }
+
+    if (ABS(left_floor - front_floor) > STEP_L * 2
+        || ABS(right_floor - front_floor) > STEP_L * 2) {
         return false;
     }
 

@@ -524,11 +524,16 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    const bool front_clear =
+        coll->side_front.floor - coll->side_front.ceiling >= 0;
+    const bool side_clear =
+        coll->side_left2.floor - coll->side_left2.ceiling >= 0
+        && coll->side_right2.floor - coll->side_right2.ceiling >= 0;
+
     if (g_Input.forward) {
         if (coll->side_front.floor > -850 && coll->side_front.floor < -650
-            && coll->side_front.floor - coll->side_front.ceiling >= 0
-            && coll->side_left2.floor - coll->side_left2.ceiling >= 0
-            && coll->side_right2.floor - coll->side_right2.ceiling >= 0
+            && front_clear && (diagonal_ledge || side_clear)
             && !coll->hit_static) {
             item->goal_anim_state = LS(g_Input.slow ? LS_GYMNAST : LS_PULL_UP);
             return;
@@ -546,8 +551,9 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
     if (g_TRVersion == 3 && (g_Input.forward || g_Input.crouch)
         && coll->side_front.floor > -850 && coll->side_front.floor < -650
         && coll->side_front.floor - coll->side_front.ceiling >= -256
-        && coll->side_left2.floor - coll->side_left2.ceiling >= -256
-        && coll->side_right2.floor - coll->side_right2.ceiling >= -256
+        && (diagonal_ledge
+            || (coll->side_left2.floor - coll->side_left2.ceiling >= -256
+                && coll->side_right2.floor - coll->side_right2.ceiling >= -256))
         && !coll->hit_static) {
         item->goal_anim_state = LS(LS_CLIMB_TO_CRAWL);
         item->required_anim_state = LS(LS_CROUCH_IDLE);
