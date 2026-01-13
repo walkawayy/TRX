@@ -526,7 +526,7 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
 
     const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
     const int32_t pullup_floor = diagonal_ledge
-        ? (coll->side_left2.floor + coll->side_right2.floor) / 2
+        ? MIN(coll->side_left2.floor, coll->side_right2.floor)
         : coll->side_front.floor;
     const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
         || coll->side_front.type == HT_SPLIT_TRI;
