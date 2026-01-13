@@ -249,14 +249,6 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     Lara_Col_GetInfo(item, coll);
 
     const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
-    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
-        || coll->side_front.type == HT_SPLIT_TRI;
-    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
-        || coll->side_front.type == HT_SPLIT_TRI;
-    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
-        || coll->side_front.type == HT_SPLIT_TRI;
-    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
-        || coll->side_front.type == HT_SPLIT_TRI;
     const bool front_close = diagonal_ledge ? false : initial_front_close;
     const bool valid_coll_type = coll->coll_type == COLL_FRONT
         || (diagonal_ledge
@@ -533,6 +525,11 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
     }
 
     const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    const int32_t pullup_floor = diagonal_ledge
+        ? (coll->side_left2.floor + coll->side_right2.floor) / 2
+        : coll->side_front.floor;
+    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
+        || coll->side_front.type == HT_SPLIT_TRI;
     const bool front_clear =
         coll->side_front.floor - coll->side_front.ceiling >= 0;
     const bool side_clear =
@@ -540,7 +537,7 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
         && coll->side_right2.floor - coll->side_right2.ceiling >= 0;
 
     if (g_Input.forward) {
-        if (coll->side_front.floor > -850 && coll->side_front.floor < -650
+        if (pullup_floor > -850 && pullup_floor < -650
             && front_clear && (diagonal_ledge || front_diagonal || side_clear)
             && !coll->hit_static) {
             item->goal_anim_state = LS(g_Input.slow ? LS_GYMNAST : LS_PULL_UP);
@@ -557,7 +554,7 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
     }
 
     if (g_TRVersion == 3 && (g_Input.forward || g_Input.crouch)
-        && coll->side_front.floor > -850 && coll->side_front.floor < -650
+        && pullup_floor > -850 && pullup_floor < -650
         && coll->side_front.floor - coll->side_front.ceiling >= -256
         && (diagonal_ledge || front_diagonal
             || (coll->side_left2.floor - coll->side_left2.ceiling >= -256
