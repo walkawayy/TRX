@@ -525,9 +525,16 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
     }
 
     const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
-    const int32_t pullup_floor = diagonal_ledge
-        ? MIN(coll->side_left2.floor, coll->side_right2.floor)
-        : coll->side_front.floor;
+    int32_t pullup_floor = coll->side_front.floor;
+    if (diagonal_ledge) {
+        const int16_t base_angle =
+            Math_DirectionToAngle(Math_GetDirection(item->rot.y));
+        const int32_t diff =
+            ((int32_t)(item->rot.y - base_angle + DEG_180) % DEG_360)
+            - DEG_180;
+        pullup_floor =
+            diff > 0 ? coll->side_right2.floor : coll->side_left2.floor;
+    }
     const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
         || coll->side_front.type == HT_SPLIT_TRI;
     const bool front_clear =
