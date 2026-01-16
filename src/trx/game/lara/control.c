@@ -42,6 +42,14 @@ static int32_t m_OpenDoorsCheatCooldown = 0;
 extern bool Skidoo_Control(void);
 extern bool QuadBike_Control(void);
 
+static void M_UpdateDebugCollision(
+    const COLL_INFO *const coll, const int32_t height)
+{
+    LARA_INFO *const lara_info = Lara_GetLaraInfo();
+    lara_info->debug_collision_radius = coll->radius;
+    lara_info->debug_collision_height = height;
+}
+
 static SECTOR *M_GetCurrentSector(void)
 {
     const ITEM *const lara_item = Lara_GetItem();
@@ -476,22 +484,30 @@ static void M_HandleAboveWater(COLL_INFO *const coll)
         switch (vehicle->object_id) {
         case O_SKIDOO_FAST:
             if (Skidoo_Control()) {
+                M_UpdateDebugCollision(coll, 0);
                 return;
             }
             break;
         case O_QUAD_BIKE:
             if (QuadBike_Control()) {
+                M_UpdateDebugCollision(coll, 0);
                 return;
             }
             break;
         default:
             Gun_Control();
+            M_UpdateDebugCollision(coll, 0);
             return;
         }
     }
 
     lara_info->is_crouched = false;
     Lara_State_Update(item, coll);
+    M_UpdateDebugCollision(
+        coll,
+        (lara_info->is_crouched || lara_info->keep_crouched)
+            ? LARA_HEIGHT_CROUCH
+            : LARA_HEIGHT);
 
     if (item->rot.z < -LARA_LEAN_UNDO) {
         item->rot.z += LARA_LEAN_UNDO;
@@ -545,6 +561,7 @@ static void M_HandleUnderwater(COLL_INFO *const coll)
 
     Lara_Look_Update();
     Lara_State_Update(item, coll);
+    M_UpdateDebugCollision(coll, LARA_HEIGHT_UW);
 
     if (item->rot.z > M_LEAN_UNDO_UW) {
         item->rot.z -= M_LEAN_UNDO_UW;
@@ -633,6 +650,7 @@ static void M_HandleSurface(COLL_INFO *const coll)
 
     Lara_Look_Update();
     Lara_State_Update(item, coll);
+    M_UpdateDebugCollision(coll, LARA_HEIGHT_UW);
 
     if (item->rot.z > M_LEAN_UNDO_SURF) {
         item->rot.z -= M_LEAN_UNDO_SURF;
