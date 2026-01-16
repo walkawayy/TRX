@@ -29,7 +29,7 @@
 #define M_DIVE_TILT_MAX     (85 * DEG_1)         // = 15470
 #define M_DIVE_TILT_MAX_ALT (100 * DEG_1)        // = 18200
 #define M_RADIUS_SURF       LARA_RADIUS          // = 100
-#define M_RADIUS_UW         300
+#define M_RADIUS_UW         LARA_RADIUS_UW
 #define M_WADE_DEPTH        (g_TRVersion == 3 ? 256 : 384)
 #define M_SWIM_DEPTH        730
 #define M_LEAN_UNDO_SURF    (LARA_LEAN_UNDO * 2) // = 364

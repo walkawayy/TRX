@@ -8,13 +8,10 @@
 #include <trx/game/rooms/utils.h>
 
 // clang-format off
-#define M_CROUCH_RADIUS            200
-#define M_CRAWL_BACK_RADIUS        250
 #define M_CRAWL_BAD_POS            255
 #define M_CRAWL_BAD_NEG           -255
 #define M_CRAWL_BAD_CEILING        400
 #define M_CROUCH_CEILING_THRESHOLD -362
-#define M_CRAWL_TO_HANG_RADIUS     200
 #define M_CRAWL_TO_HANG_HEIGHT     870
 #define M_CRAWL_TO_HANG_XZ_OFFSET  100
 #define M_CRAWL_TO_HANG_FALL_SPEED 512
@@ -70,7 +67,7 @@ static void M_Crouch(ITEM *const item, COLL_INFO *const coll)
     lara->move_angle = item->rot.y;
 
     coll->facing = lara->move_angle;
-    coll->radius = M_CROUCH_RADIUS;
+    coll->radius = LARA_RADIUS_CROUCH;
     coll->bad_pos = STEPUP_HEIGHT;
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = 0;
@@ -106,7 +103,7 @@ static void M_CrouchRoll(ITEM *const item, COLL_INFO *const coll)
     lara->move_angle = item->rot.y;
 
     coll->facing = lara->move_angle;
-    coll->radius = M_CROUCH_RADIUS;
+    coll->radius = LARA_RADIUS_CROUCH;
     coll->bad_pos = STEPUP_HEIGHT;
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = 0;
@@ -150,7 +147,7 @@ static void M_CrawlIdle(ITEM *const item, COLL_INFO *const coll)
     lara->move_angle = item->rot.y;
 
     coll->facing = lara->move_angle;
-    coll->radius = M_CROUCH_RADIUS;
+    coll->radius = LARA_RADIUS_CROUCH;
     coll->bad_pos = M_CRAWL_BAD_POS;
     coll->bad_neg = M_CRAWL_BAD_NEG;
     coll->bad_ceiling = M_CRAWL_BAD_CEILING;
@@ -256,7 +253,7 @@ static void M_CrawlForward(ITEM *const item, COLL_INFO *const coll)
     lara->is_crouched = true;
     lara->move_angle = item->rot.y;
 
-    coll->radius = M_CROUCH_RADIUS;
+    coll->radius = LARA_RADIUS_CROUCH;
     coll->bad_pos = M_CRAWL_BAD_POS;
     coll->bad_neg = M_CRAWL_BAD_NEG;
     coll->bad_ceiling = M_CRAWL_BAD_CEILING;
@@ -298,7 +295,7 @@ static void M_CrawlBack(ITEM *const item, COLL_INFO *const coll)
     lara->is_crouched = true;
     lara->move_angle = item->rot.y + DEG_180;
 
-    coll->radius = M_CRAWL_BACK_RADIUS;
+    coll->radius = LARA_RADIUS_CRAWL_BACK;
     coll->bad_pos = M_CRAWL_BAD_POS;
     coll->bad_neg = M_CRAWL_BAD_NEG;
     coll->bad_ceiling = M_CRAWL_BAD_CEILING;
@@ -337,7 +334,7 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
     LARA_INFO *const lara = Lara_GetLaraInfo();
     lara->move_angle = item->rot.y;
 
-    coll->radius = M_CRAWL_TO_HANG_RADIUS;
+    coll->radius = LARA_RADIUS_CROUCH;
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = M_CRAWL_TO_HANG_BAD_CEILING;

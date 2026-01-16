@@ -14,6 +14,33 @@
 
 static bool m_CacheMatrices = false;
 
+static void M_DrawLaraCollisionBounds(const ITEM *const item)
+{
+    const LARA_INFO *const lara = Lara_GetLaraInfo();
+    int32_t radius = LARA_RADIUS;
+    int32_t height = LARA_HEIGHT;
+
+    if (lara->water_status == LWS_UNDERWATER) {
+        radius = LARA_RADIUS_UW;
+        height = LARA_HEIGHT_UW;
+    } else if (lara->water_status == LWS_SURFACE) {
+        radius = LARA_RADIUS;
+        height = LARA_HEIGHT_UW;
+    } else if (lara->is_crouched) {
+        radius = LARA_RADIUS_CROUCH;
+        height = LARA_HEIGHT_CROUCH;
+        if (item->current_anim_state == LS(LS_CRAWL_BACK)) {
+            radius = LARA_RADIUS_CRAWL_BACK;
+        }
+    }
+
+    const BOUNDS_16 bounds = {
+        .min = { -radius, -height, -radius },
+        .max = { radius, 0, radius },
+    };
+    Output_DrawCuboid(&bounds);
+}
+
 static void M_CacheMatrix(const LARA_MESH mesh)
 {
     if (!m_CacheMatrices) {
@@ -123,6 +150,9 @@ static bool M_Draw_I(
 
     if (g_Config.debug.enable_debug_cuboids) {
         Output_DrawCuboid(&frame1->bounds);
+    }
+    if (is_lara && g_Config.debug.enable_debug_lara_collision) {
+        M_DrawLaraCollisionBounds(item);
     }
 
     m_CacheMatrices = is_lara;
