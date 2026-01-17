@@ -25,6 +25,7 @@ typedef enum {
 typedef struct {
     MATRIX matrix;
     M_PRIMITIVE_TYPE prim_type;
+    RGBA_F color;
 } M_INSTANCE;
 
 typedef struct {
@@ -146,6 +147,9 @@ static void M_DrawScheduled(M_PRIV *const p, VECTOR *const scheduled)
 {
     for (int32_t i = 0; i < scheduled->count; i++) {
         const M_INSTANCE *const instance = Vector_Get(scheduled, i);
+        const RGBA_F color = instance->color;
+        glVertexAttrib4f(
+            OUTPUT_MESH_ATTR_COLOR, color.r, color.g, color.b, color.a);
         Output_MeshShader_UploadModelMatrix(p->shader, &instance->matrix);
         const OUTPUT_VERTEX_RANGE *const range =
             &p->primitive_ranges[instance->prim_type];
@@ -204,11 +208,7 @@ static void M_RenderPass(
         glPolygonMode(GL_FRONT_AND_BACK, bound_polygon_mode[0]);
     }
     if (p->scheduled_cuboids->count > 0) {
-        const bool wireframe_state = g_Config.rendering.enable_wireframe;
-        const RGBA_F color = { 1.0f, 0.0f, 0.0f, 1.0f };
         glDisableVertexAttribArray(OUTPUT_MESH_ATTR_COLOR);
-        glVertexAttrib4f(
-            OUTPUT_MESH_ATTR_COLOR, color.r, color.g, color.b, color.a);
         GLint bound_polygon_mode2[2];
         glGetIntegerv(GL_POLYGON_MODE, &bound_polygon_mode2[0]);
         glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -289,22 +289,25 @@ void OutputSource_Misc_Shutdown(void)
     }
 }
 
-void OutputSource_Misc_StageSphere(void)
+void OutputSource_Misc_StageSphere(RGBA_F color)
 {
     M_PRIV *const p = &m_Priv;
     M_INSTANCE inst = {
         .matrix = *g_WMatrixPtr,
         .prim_type = M_PRIMITIVE_SPHERE,
+        .color = color,
     };
     Vector_Add(p->scheduled_spheres, &inst);
 }
 
 void OutputSource_Misc_StageCuboid(void)
 {
+    const RGBA_F color = { 1.0f, 0.0f, 0.0f, 1.0f };
     M_PRIV *const p = &m_Priv;
     M_INSTANCE inst = {
         .matrix = *g_WMatrixPtr,
         .prim_type = M_PRIMITIVE_CUBOID,
+        .color = color,
     };
     Vector_Add(p->scheduled_cuboids, &inst);
 }

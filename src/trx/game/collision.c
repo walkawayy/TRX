@@ -4,11 +4,23 @@
 #include <trx/game/items.h>
 #include <trx/game/lara/common.h>
 #include <trx/game/matrix.h>
+#include <trx/game/output.h>
 #include <trx/game/rooms.h>
 #include <trx/utils.h>
 #include <trx/version.h>
 
 #define M_HEADROOM 160 // Additional collision space above Lara's head.
+
+static bool m_DebugCollisionInfo = false;
+static int32_t m_DebugSphereNum = 0;
+
+static const RGBA_F m_DebugCollisionColors[DEBUG_COLL_SPHERES_MAX] = {
+    { 1.0f, 0.0f, 0.0f, 0.8f }, // red
+    { 0.0f, 0.0f, 1.0f, 0.8f }, // blue
+    { 0.0f, 1.0f, 0.0f, 0.8f }, // green
+    { 1.0f, 1.0f, 0.0f, 0.8f }, // yellow
+    { 1.0f, 0.5f, 0.0f, 0.8f }, // orange
+};
 
 static bool M_IsOnWalkable(
     const SECTOR *const sector, const int32_t x, const int32_t y,
@@ -75,6 +87,17 @@ static void M_FillSide(
     } else if (sim_wall) {
         side->floor = NO_HEIGHT;
         side->ceiling = NO_HEIGHT;
+    }
+
+    if (g_Config.debug.enable_debug_collision && m_DebugCollisionInfo) {
+        LARA_INFO *const lara = Lara_GetLaraInfo();
+        const XYZ_32 pos = { .x = x_pos, .y = y_pos, .z = z_pos };
+        const RGBA_F color = m_DebugCollisionColors[m_DebugSphereNum];
+        const DEBUG_COLLISION_SPHERE sphere = { .pos = pos,
+                                                coll->radius,
+                                                .color = color };
+        lara->debug_collision[m_DebugSphereNum] = sphere;
+        m_DebugSphereNum++;
     }
 }
 
@@ -669,4 +692,10 @@ bool Collide_TestBoundsCollide(
         rz >= src_bounds->min.z - radius &&
         rz <= src_bounds->max.z + radius);
     // clang-format on
+}
+
+void Collide_DebugCollisionInfo(const bool enable)
+{
+    m_DebugSphereNum = 0;
+    m_DebugCollisionInfo = enable;
 }

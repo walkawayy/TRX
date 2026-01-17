@@ -272,7 +272,11 @@ void Output_DrawObjectMesh(const OBJECT_MESH *const mesh, const CLIP clip)
 {
     OutputSource_Objects_StageObjectMesh(mesh);
     if (g_Config.debug.enable_debug_spheres) {
-        Output_DrawSphere(mesh->center, mesh->radius);
+        const bool wireframe_state = g_Config.rendering.enable_wireframe;
+        const RGBA_F color_black = { 0.0f, 0.0f, 0.0f, 0.5f };
+        const RGBA_F color_white = { 1.0f, 1.0f, 1.0f, 0.5f };
+        const RGBA_F color = wireframe_state ? color_black : color_white;
+        Output_DrawSphere(mesh->center, mesh->radius, color);
     }
 }
 
@@ -394,12 +398,23 @@ void Output_DrawScreenFrame(
     // clang-format on
 }
 
-void Output_DrawSphere(const XYZ_16 center, const int32_t radius)
+void Output_DrawSphere(
+    const XYZ_16 center, const int32_t radius, const RGBA_F color)
 {
     Matrix_Push();
     Matrix_TranslateRel16(center);
     Matrix_Scale(radius << W2V_SHIFT);
-    OutputSource_Misc_StageSphere();
+    OutputSource_Misc_StageSphere(color);
+    Matrix_Pop();
+}
+
+void Output_DrawSphereAbs32(
+    const XYZ_32 center, const int32_t radius, const RGBA_F color)
+{
+    Matrix_PushUnit();
+    Matrix_TranslateAbs32(center);
+    Matrix_Scale(radius << W2V_SHIFT);
+    OutputSource_Misc_StageSphere(color);
     Matrix_Pop();
 }
 

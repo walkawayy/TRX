@@ -14,6 +14,18 @@
 
 static bool m_CacheMatrices = false;
 
+static void M_DrawCollisionBounds(
+    const LARA_INFO *const lara, int32_t sphere_num)
+{
+    Matrix_PushUnit();
+    Matrix_TranslateAbs32(lara->debug_collision[sphere_num].pos);
+    Output_DrawSphereAbs32(
+        lara->debug_collision[sphere_num].pos,
+        lara->debug_collision[sphere_num].radius,
+        lara->debug_collision[sphere_num].color);
+    Matrix_Pop();
+}
+
 static void M_CacheMatrix(const LARA_MESH mesh)
 {
     if (!m_CacheMatrices) {
@@ -123,6 +135,13 @@ static bool M_Draw_I(
 
     if (g_Config.debug.enable_debug_cuboids) {
         Output_DrawCuboid(&frame1->bounds);
+    }
+
+    if (g_Config.debug.enable_debug_collision) {
+        // Draw in reverse order so left2 and right2 are only drawn if unique.
+        for (int32_t i = DEBUG_COLL_SPHERES_MAX - 1; i >= 0; i--) {
+            M_DrawCollisionBounds(lara, i);
+        }
     }
 
     m_CacheMatrices = is_lara;
@@ -421,6 +440,13 @@ bool Lara_Draw(const ITEM *const item)
 
     if (g_Config.debug.enable_debug_cuboids) {
         Output_DrawCuboid(&frame->bounds);
+    }
+
+    if (g_Config.debug.enable_debug_collision) {
+        // Draw in reverse order so left2 and right2 are only drawn if unique.
+        for (int32_t i = DEBUG_COLL_SPHERES_MAX - 1; i >= 0; i--) {
+            M_DrawCollisionBounds(lara, i);
+        }
     }
 
     m_CacheMatrices = is_lara;
