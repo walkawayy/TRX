@@ -9,6 +9,13 @@
 #include <trx/game/objects/common.h>
 #include <trx/game/types.h>
 
+#define DEBUG_COLL_SPHERES_MAX 5
+
+typedef struct {
+    XYZ_32 pos; // world space
+    int32_t radius; // world units
+} DEBUG_COLLISION_SPHERE;
+
 typedef struct {
     ANIM_FRAME *frame_base;
     int16_t frame_num;
@@ -111,8 +118,7 @@ typedef struct {
 
     MATRIX mesh_pos_matrices[LM_NUMBER_OF];
     bool mesh_pos_matrices_valid;
-    int32_t debug_collision_radius;
-    int32_t debug_collision_height;
+    DEBUG_COLLISION_SPHERE debug_collision[DEBUG_COLL_SPHERES_MAX];
 
     // TR3: persistent gun smoke spawned from muzzle after firing.
     int32_t tr3_smoke_count_l;

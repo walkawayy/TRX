@@ -14,19 +14,15 @@
 
 static bool m_CacheMatrices = false;
 
-static void M_DrawCollisionBounds(const LARA_INFO *const lara)
+static void M_DrawCollisionBounds(
+    const LARA_INFO *const lara, int32_t sphere_num)
 {
-    if (lara->debug_collision_radius <= 0 || lara->debug_collision_height <= 0) {
-        return;
-    }
-
-    const int16_t radius = (int16_t)lara->debug_collision_radius;
-    const int16_t height = (int16_t)lara->debug_collision_height;
-    const BOUNDS_16 bounds = {
-        .min = { .x = -radius, .y = -height, .z = -radius },
-        .max = { .x = radius, .y = 0, .z = radius },
-    };
-    Output_DrawCuboid(&bounds);
+    Matrix_PushUnit();
+    Matrix_TranslateAbs32(lara->debug_collision[sphere_num].pos);
+    Output_DrawSphereAbs32(
+        lara->debug_collision[sphere_num].pos,
+        lara->debug_collision[sphere_num].radius);
+    Matrix_Pop();
 }
 
 static void M_CacheMatrix(const LARA_MESH mesh)
@@ -139,8 +135,11 @@ static bool M_Draw_I(
     if (g_Config.debug.enable_debug_cuboids) {
         Output_DrawCuboid(&frame1->bounds);
     }
-    if (is_lara && g_Config.debug.enable_debug_lara_collision) {
-        M_DrawCollisionBounds(lara);
+
+    if (g_Config.debug.enable_debug_collision) {
+        for (int i = 0; i < DEBUG_COLL_SPHERES_MAX; i++) {
+            M_DrawCollisionBounds(lara, i);
+        }
     }
 
     m_CacheMatrices = is_lara;
@@ -440,8 +439,11 @@ bool Lara_Draw(const ITEM *const item)
     if (g_Config.debug.enable_debug_cuboids) {
         Output_DrawCuboid(&frame->bounds);
     }
-    if (is_lara && g_Config.debug.enable_debug_lara_collision) {
-        M_DrawCollisionBounds(lara);
+
+    if (g_Config.debug.enable_debug_collision) {
+        for (int i = 0; i < 5; i++) {
+            M_DrawCollisionBounds(lara, i);
+        }
     }
 
     m_CacheMatrices = is_lara;
