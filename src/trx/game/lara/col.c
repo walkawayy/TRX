@@ -119,6 +119,26 @@ void Lara_Col_GetInfo(const ITEM *const item, COLL_INFO *const coll)
         LARA_HEIGHT);
 }
 
+bool Lara_Col_IsTriLedge(const COLL_INFO *const coll)
+{
+    const bool front_tri = coll->side_front.type == HT_SPLIT_TRI;
+    const bool left_tri = coll->side_left2.type == HT_SPLIT_TRI;
+    const bool right_tri = coll->side_right2.type == HT_SPLIT_TRI;
+
+    if (!front_tri && !left_tri && !right_tri) {
+        return false;
+    }
+
+    const int32_t left2_floor = coll->side_left2.floor;
+    const int32_t right2_floor = coll->side_right2.floor;
+    if (left2_floor == NO_HEIGHT || right2_floor == NO_HEIGHT) {
+        return false;
+    }
+
+    // TODO Need to check for slope dif?
+    return true;
+}
+
 void Lara_Col_Shift(COLL_INFO *const coll)
 {
     ITEM *const lara_item = Lara_GetItem();

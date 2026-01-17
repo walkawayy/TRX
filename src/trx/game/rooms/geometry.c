@@ -149,6 +149,7 @@ static int16_t M_GetSurfaceHeight(
     const SURFACE surface, const int32_t x, const int32_t z,
     const bool fix_tilts)
 {
+    // LOG_DEBUG("xz: %d %d; is_split: %d", x, z, surface.is_split);
     return surface.is_split
         ? M_GetSplitSurfaceHeight(surface, x, z)
         : M_GetUnsplitSurfaceHeight(surface, x, z, fix_tilts);

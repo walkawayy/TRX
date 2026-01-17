@@ -6,6 +6,7 @@
 #include <trx/game/rooms/enum.h>
 #include <trx/game/rooms/utils.h>
 #include <trx/game/sound.h>
+#include <trx/log.h>
 #include <trx/version.h>
 
 // clang-format off
@@ -13,6 +14,30 @@
 #define M_LF_FAST_FALL     1
 #define M_BAD_JUMP_CEILING ((STEP_L * 3) / 4) // = 192
 // clang-format on
+
+static inline int32_t M_MulSqrt2(const int32_t v)
+{
+    // v * sqrt(2) ≈ v * 181 / 128
+    return (v * 181 + 64) >> 7;
+}
+
+static inline void M_ProjectToLine_XPlusZ(
+    int32_t *x, int32_t *z, const int32_t c)
+{
+    const int32_t d = (*x + *z) - c;
+    const int32_t t = d / 2;
+    *x -= t;
+    *z -= t;
+}
+
+static inline void M_ProjectToLine_XMinusZ(
+    int32_t *x, int32_t *z, const int32_t c)
+{
+    const int32_t d = (*x - *z) - c;
+    const int32_t t = d / 2;
+    *x -= t;
+    *z += t;
+}
 
 EDGE_CATCH Lara_Col_TestEdgeCatch(
     const ITEM *const item, const COLL_INFO *const coll, int32_t *const edge)
@@ -32,6 +57,11 @@ EDGE_CATCH Lara_Col_TestEdgeCatch(
             *edge = hdif1 & ~(STEP_L - 1);
         }
         return EDGE_CATCH_NEG;
+    }
+
+    // TODO
+    if (Lara_Col_IsTriLedge(coll)) {
+        return EDGE_CATCH_POS;
     }
 
     return ABS(coll->side_left2.floor - coll->side_right2.floor) < SLOPE_DIF
@@ -105,11 +135,12 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
-    if (dir == DIR_UNKNOWN) {
+    const DIRECTION_8 dir =
+        Math_GetDirectionCone8(item->rot.y, LARA_HANG_ANGLE);
+    if (dir == DIR8_UNKNOWN) {
         return false;
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
+    const int16_t angle = Math_Direction8ToAngle(dir);
 
     if (Lara_Col_TestHangSwingIn(item, angle)) {
         Item_SwitchToAnim(item, LA(LA_REACH_TO_THIN_LEDGE), 0);
@@ -121,32 +152,75 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
     item->goal_anim_state = anim->current_anim_state;
 
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
+
+    LOG_DEBUG(
+        "side_front.floor: %d; side_left2.floor: %d; side_right2.floor: "
+        "%d; bounds->min.y: %d; dir: %d; angle: %d; coll->shift.x: %d; "
+        "coll->shift.z: %d",
+        coll->side_front.floor, coll->side_left2.floor, coll->side_right2.floor,
+        bounds->min.y, dir, angle, coll->shift.x, coll->shift.z);
+
     if (edge_catch == EDGE_CATCH_POS) {
         item->pos.y += coll->side_front.floor - bounds->min.y;
+
+        // Apply collision correction first.
+        item->pos.x += coll->shift.x;
+        item->pos.z += coll->shift.z;
+
+        // Sector bounds of the current position.
+        const int32_t x0 = ROUND_TO_SECTOR(item->pos.x);
+        const int32_t x1 = ROUND_TO_SECTOR_END(item->pos.x);
+        const int32_t z0 = ROUND_TO_SECTOR(item->pos.z);
+        const int32_t z1 = ROUND_TO_SECTOR_END(item->pos.z);
+
+        // Radius offset for 45° diagonal (distance-to-line uses sqrt(2)).
+        const int32_t r2 = M_MulSqrt2(LARA_RADIUS);
+
         switch (dir) {
-        case DIR_NORTH:
-            item->pos.z = ROUND_TO_SECTOR_END(item->pos.z) - LARA_RADIUS;
-            item->pos.x += coll->shift.x;
+        case DIR8_NORTH:
+            item->pos.z = z1 - LARA_RADIUS;
             break;
 
-        case DIR_EAST:
-            item->pos.x = ROUND_TO_SECTOR_END(item->pos.x) - LARA_RADIUS;
-            item->pos.z += coll->shift.z;
+        case DIR8_EAST:
+            item->pos.x = x1 - LARA_RADIUS;
             break;
 
-        case DIR_SOUTH:
-            item->pos.z = ROUND_TO_SECTOR(item->pos.z) + LARA_RADIUS;
-            item->pos.x += coll->shift.x;
+        case DIR8_SOUTH:
+            item->pos.z = z0 + LARA_RADIUS;
             break;
 
-        case DIR_WEST:
-            item->pos.x = ROUND_TO_SECTOR(item->pos.x) + LARA_RADIUS;
-            item->pos.z += coll->shift.z;
+        case DIR8_WEST:
+            item->pos.x = x0 + LARA_RADIUS;
             break;
+
+        case DIR8_NORTHEAST: {
+            // diagonal through (x0,z1) -> (x1,z0): x + z = x0 + z1
+            const int32_t c = (x0 + z1) - r2;
+            M_ProjectToLine_XPlusZ(&item->pos.x, &item->pos.z, c);
+            break;
+        }
+
+        case DIR8_SOUTHWEST: {
+            const int32_t c = (x0 + z1) + r2;
+            M_ProjectToLine_XPlusZ(&item->pos.x, &item->pos.z, c);
+            break;
+        }
+
+        case DIR8_NORTHWEST: {
+            // diagonal through (x0,z0) -> (x1,z1): x - z = x0 - z0
+            const int32_t c = (x0 - z0) + r2;
+            M_ProjectToLine_XMinusZ(&item->pos.x, &item->pos.z, c);
+            break;
+        }
+
+        case DIR8_SOUTHEAST: {
+            const int32_t c = (x0 - z0) - r2;
+            M_ProjectToLine_XMinusZ(&item->pos.x, &item->pos.z, c);
+            break;
+        }
 
         default:
-            item->pos.x += coll->shift.x;
-            item->pos.z += coll->shift.z;
+            // Nothing else to do; shifts already applied above.
             break;
         }
     } else {

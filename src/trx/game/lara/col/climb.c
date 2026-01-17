@@ -3,6 +3,7 @@
 #include <trx/game/lara.h>
 #include <trx/game/lara/util.h>
 #include <trx/game/rooms.h>
+#include <trx/log.h>
 #include <trx/version.h>
 
 // clang-format off
@@ -229,36 +230,38 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     coll->bad_neg = NO_BAD_NEG;
     coll->bad_ceiling = 0;
     Lara_Col_GetInfo(item, coll);
-    const bool flag = coll->side_front.floor < 200;
+    const bool initial_front_close = coll->side_front.floor < 200;
 
     item->gravity = false;
     item->fall_speed = 0;
     LARA_INFO *const lara = Lara_GetLaraInfo();
+    // TODO
     lara->move_angle = item->rot.y;
 
-    const DIRECTION dir = Math_GetDirection(item->rot.y);
-    const int32_t hang_test_shift = g_TRVersion >= 3 ? 4 : 2;
-    switch (dir) {
-    case DIR_NORTH:
-        item->pos.z += hang_test_shift;
-        break;
-    case DIR_EAST:
-        item->pos.x += hang_test_shift;
-        break;
-    case DIR_SOUTH:
-        item->pos.z -= hang_test_shift;
-        break;
-    case DIR_WEST:
-        item->pos.x -= hang_test_shift;
-        break;
-    default:
-        break;
+    const DIRECTION_8 dir8 =
+        Math_GetDirectionCone8(item->rot.y, LARA_HANG_ANGLE);
+    if (dir8 == DIR8_UNKNOWN) {
+        // fall back or just return; for hang tests, returning is usually safest
+        item->pos = coll->old;
+        return;
     }
+    const int16_t probe_angle = Math_Direction8ToAngle(dir8);
+    const int32_t hang_test_shift = g_TRVersion >= 3 ? 4 : 2;
+    LOG_DEBUG("Before pos xz: %d %d", item->pos.x, item->pos.z);
+    item->pos.x += (Math_Sin(probe_angle) * hang_test_shift) >> W2V_SHIFT;
+    item->pos.z += (Math_Cos(probe_angle) * hang_test_shift) >> W2V_SHIFT;
+    LOG_DEBUG("After pos xz: %d %d", item->pos.x, item->pos.z);
 
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = 0;
     Lara_Col_GetInfo(item, coll);
+
+    const bool tri_ledge = Lara_Col_IsTriLedge(coll);
+    const bool front_close = tri_ledge ? false : initial_front_close;
+    const bool valid_coll_type = coll->coll_type == COLL_FRONT
+        || (tri_ledge
+            && (coll->coll_type == COLL_LEFT || coll->coll_type == COLL_RIGHT));
 
     if (lara->climb_status) {
         if (!g_Input.action || item->hit_points <= 0) {
@@ -268,12 +271,17 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
                 .z = 0,
             };
             Collide_GetJointAbsPosition(item, &pos, 0);
-            if (dir == DIR_NORTH || dir == DIR_SOUTH) {
+            if (tri_ledge
+                || (dir8 & 1)) { // odd dir8 => diagonal if you number 0..7
+                item->pos.x = pos.x;
+                item->pos.z = pos.z;
+            } else if (dir8 == DIR8_NORTH || dir8 == DIR8_SOUTH) {
                 item->pos.x = pos.x;
             } else {
                 item->pos.z = pos.z;
             }
 
+            LOG_DEBUG("Fall here?");
             item->goal_anim_state = LS(LS_JUMP_FORWARD);
             item->current_anim_state = LS(LS_JUMP_FORWARD);
             Item_SwitchToAnim(item, LA(LA_FALL_START), 0);
@@ -303,8 +311,22 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
+    LOG_DEBUG(
+        "First check. dir8: %d; coll_type: %d; "
+        "side_front.floor: %d; side_front.type: %d; side_left.floor: %d; "
+        "side_left2.floor: %d; "
+        "side_left2.type: %d; side_right.floor: %d; side_right2.floor: %d; "
+        "side_right2.type: %d; tri_ledge: %d; "
+        "item->pos.x: %d; coll->shift.x: %d; "
+        "item->pos.z: %d; coll->shift.z: %d; ",
+        dir8, coll->coll_type, coll->side_front.floor, coll->side_front.type,
+        coll->side_left.floor, coll->side_left2.floor, coll->side_left2.type,
+        coll->side_right.floor, coll->side_right2.floor, coll->side_right2.type,
+        tri_ledge, item->pos.x, coll->shift.x, item->pos.z, coll->shift.z);
     if (!g_Input.action || item->hit_points <= 0
-        || coll->side_front.floor > 0) {
+        || (coll->side_front.floor > 0 && !tri_ledge)
+        || (tri_ledge
+            && (coll->side_left2.floor > 0 && coll->side_right2.floor > 0))) {
         item->goal_anim_state = LS(LS_JUMP_UP);
         item->current_anim_state = LS(LS_JUMP_UP);
         Item_SwitchToAnim(item, LA(LA_JUMP_UP), M_LF_STOP_HANG);
@@ -324,11 +346,43 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     }
 
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
-    const int32_t hdif = coll->side_front.floor - bounds->min.y;
 
-    if (ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
-        || coll->side_mid.ceiling >= 0 || coll->coll_type != COLL_FRONT || flag
-        || coll->hit_static || hdif < -SLOPE_DIF || hdif > SLOPE_DIF) {
+    const int32_t front_hdif = coll->side_front.floor - bounds->min.y;
+    const bool front_diagonal =
+        front_hdif < -SLOPE_DIF || front_hdif > SLOPE_DIF;
+
+    const int32_t left2_hdif = coll->side_left2.floor - bounds->min.y;
+    const bool left2_diagonal =
+        left2_hdif < -SLOPE_DIF || left2_hdif > SLOPE_DIF;
+
+    const int32_t right2_hdif = coll->side_right2.floor - bounds->min.y;
+    const bool right2_diagonal =
+        right2_hdif < -SLOPE_DIF || right2_hdif > SLOPE_DIF;
+
+    const bool tri_diagonal =
+        ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF;
+
+    LOG_DEBUG(
+        "side_front.floor: %d; side_left.floor: %d; side_left2.floor: %d; "
+        "side_right.floor: %d; side_right2.floor: %d;\n tri_ledge: %d; "
+        "coll->side_mid.ceiling: %d; "
+        "bounds->min.y: %d; front_hdif: %d; front_diagonal: %d; left2_hdif: "
+        "%d; left2_diagonal: %d; right2_hdif: %d; right2_diagonal: %d; "
+        "tri_diagonal: %d;",
+        coll->side_front.floor, coll->side_left.floor, coll->side_left2.floor,
+        coll->side_right.floor, coll->side_right2.floor, tri_ledge,
+        coll->side_mid.ceiling, bounds->min.y, front_hdif, front_diagonal,
+        left2_hdif, left2_diagonal, right2_hdif, right2_diagonal, tri_diagonal);
+
+    // if (ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
+    //     || coll->side_mid.ceiling >= 0 || coll->coll_type != COLL_FRONT ||
+    //     flag
+    //     || coll->hit_static || hdif < -SLOPE_DIF || hdif > SLOPE_DIF) {
+
+    // TODO
+    if (tri_diagonal || coll->side_mid.ceiling >= 0 || !valid_coll_type
+        || front_close || coll->hit_static || (!tri_ledge && front_diagonal)
+        || (tri_ledge && (left2_diagonal && right2_diagonal))) {
         item->pos = coll->old;
         if (item->current_anim_state == LS(LS_SHIMMY_LEFT)
             || item->current_anim_state == LS(LS_SHIMMY_RIGHT)) {
@@ -339,23 +393,17 @@ void Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
-    switch (dir) {
-    case DIR_NORTH:
-    case DIR_SOUTH:
-        item->pos.z += coll->shift.z;
-        break;
-
-    case DIR_EAST:
-    case DIR_WEST:
+    if (tri_ledge || (dir8 & 1)) {
         item->pos.x += coll->shift.x;
-        break;
-
-    default:
-        break;
+        item->pos.z += coll->shift.z;
+    } else if (dir8 == DIR8_NORTH || dir8 == DIR8_SOUTH) {
+        item->pos.z += coll->shift.z;
+    } else if (dir8 == DIR8_EAST || dir8 == DIR8_WEST) {
+        item->pos.x += coll->shift.x;
     }
 
-    if (g_TRVersion >= 2 || (hdif >= -STEP_L && hdif <= STEP_L)) {
-        item->pos.y += hdif;
+    if (g_TRVersion >= 2 || (front_hdif >= -STEP_L && front_hdif <= STEP_L)) {
+        item->pos.y += front_hdif;
     }
 }
 
@@ -524,12 +572,35 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
         return;
     }
 
+    const bool tri_ledge = Lara_Col_IsTriLedge(coll);
+    int32_t pullup_floor = coll->side_front.floor;
+    if (tri_ledge) {
+        const int16_t base_angle =
+            Math_DirectionToAngle(Math_GetDirection(item->rot.y));
+        const int32_t diff =
+            ((int32_t)(item->rot.y - base_angle + DEG_180) % DEG_360) - DEG_180;
+        pullup_floor =
+            diff > 0 ? coll->side_right2.floor : coll->side_left2.floor;
+    }
+    const bool front_diagonal = coll->side_front.type == HT_DIAGONAL
+        || coll->side_front.type == HT_SPLIT_TRI;
+    const bool front_clear =
+        coll->side_front.floor - coll->side_front.ceiling >= 0;
+    const bool side_clear =
+        coll->side_left2.floor - coll->side_left2.ceiling >= 0
+        && coll->side_right2.floor - coll->side_right2.ceiling >= 0;
+
+    LOG_DEBUG(
+        "side_front.floor: %d; side_left2.floor: %d; side_right2.floor: "
+        "%d; pullup_floor: %d; front_clear: %d; "
+        "tri_ledge: %d; "
+        "side_clear: %d; hit_static: %d",
+        coll->side_front.floor, coll->side_left2.floor, coll->side_right2.floor,
+        pullup_floor, front_clear, tri_ledge, side_clear, coll->hit_static);
     if (g_Input.forward) {
-        if (coll->side_front.floor > -850 && coll->side_front.floor < -650
-            && coll->side_front.floor - coll->side_front.ceiling >= 0
-            && coll->side_left2.floor - coll->side_left2.ceiling >= 0
-            && coll->side_right2.floor - coll->side_right2.ceiling >= 0
-            && !coll->hit_static) {
+        // if (coll->side_front.floor > -850 && coll->side_front.floor < -650
+        if (pullup_floor > -850 && pullup_floor < -650 && front_clear
+            && (tri_ledge || side_clear) && !coll->hit_static) {
             item->goal_anim_state = LS(g_Input.slow ? LS_GYMNAST : LS_PULL_UP);
             return;
         } else if (
@@ -543,11 +614,14 @@ static void M_Hang(ITEM *const item, COLL_INFO *const coll)
         }
     }
 
-    if (g_TRVersion == 3 && (g_Input.forward || g_Input.crouch)
-        && coll->side_front.floor > -850 && coll->side_front.floor < -650
+    if (g_TRVersion == 3
+        && (g_Input.forward || g_Input.crouch)
+        // && coll->side_front.floor > -850 && coll->side_front.floor < -650
+        && pullup_floor > -850 && pullup_floor < -650
         && coll->side_front.floor - coll->side_front.ceiling >= -256
-        && coll->side_left2.floor - coll->side_left2.ceiling >= -256
-        && coll->side_right2.floor - coll->side_right2.ceiling >= -256
+        && (tri_ledge
+            || (coll->side_left2.floor - coll->side_left2.ceiling >= -256
+                && coll->side_right2.floor - coll->side_right2.ceiling >= -256))
         && !coll->hit_static) {
         item->goal_anim_state = LS(LS_CLIMB_TO_CRAWL);
         item->required_anim_state = LS(LS_CROUCH_IDLE);
@@ -567,6 +641,9 @@ static void M_Shimmy(ITEM *const item, COLL_INFO *const coll)
         item->current_anim_state == LS(LS_SHIMMY_LEFT) ? -DEG_90 : DEG_90;
     LARA_INFO *const lara = Lara_GetLaraInfo();
     lara->move_angle = item->rot.y + angle;
+    LOG_DEBUG(
+        "move_angle: %d; rot.y: %d; angle: %d", lara->move_angle, item->rot.y,
+        angle);
     Lara_Col_HangTest(item, coll);
     lara->move_angle = item->rot.y + angle;
 }
@@ -865,7 +942,11 @@ bool Lara_Col_TestVault(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, M_VAULT_ANGLE);
+    const bool tri_ledge = Lara_Col_IsTriLedge(coll);
+    DIRECTION dir = Math_GetDirectionCone(item->rot.y, M_VAULT_ANGLE);
+    if (dir == DIR_UNKNOWN && tri_ledge) {
+        dir = Math_GetDirection(item->rot.y);
+    }
     if (dir == DIR_UNKNOWN) {
         return false;
     }
@@ -877,7 +958,7 @@ bool Lara_Col_TestVault(ITEM *const item, COLL_INFO *const coll)
     const int32_t right_ceiling = coll->side_right2.ceiling;
     const int32_t front_floor = coll->side_front.floor;
     const int32_t front_ceiling = coll->side_front.ceiling;
-    const bool slope = ABS(left_floor - right_floor) >= SLOPE_DIF;
+    const bool slope = !tri_ledge && ABS(left_floor - right_floor) >= SLOPE_DIF;
     const int32_t mid = STEP_L / 2;
     const ROOM *const room = Room_Get(item->room_num);
 

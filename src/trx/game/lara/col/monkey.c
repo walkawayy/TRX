@@ -3,6 +3,7 @@
 #include <trx/game/lara.h>
 #include <trx/game/lara/util.h>
 #include <trx/game/rooms.h>
+#include <trx/log.h>
 #include <trx/utils.h>
 
 // clang-format off
@@ -148,6 +149,7 @@ static void M_MonkeyIdle(ITEM *const item, COLL_INFO *const coll)
     // Monkey idle state can be the result of swinging on a thin ledge as well
     // as actually being on monkeybars. LA_REACH_TO_THIN_LEDGE in TR3 links to
     // this state.
+    LOG_DEBUG("M_MonkeyIdle");
     Lara_Col_HangTest(item, coll);
     if (item->goal_anim_state != LS(LS_MONKEY_IDLE)) {
         return;

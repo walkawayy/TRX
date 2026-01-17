@@ -24,6 +24,7 @@ bool Lara_Col_TestCeiling(ITEM *item, const COLL_INFO *coll);
 bool Lara_Col_TestHangSwingIn(const ITEM *item, int16_t angle);
 EDGE_CATCH Lara_Col_TestEdgeCatch(
     const ITEM *item, const COLL_INFO *coll, int32_t *edge);
+bool Lara_Col_IsTriLedge(const COLL_INFO *coll);
 bool Lara_Col_Fallen(ITEM *item, const COLL_INFO *coll);
 void Lara_Col_DeflectEdgeJump(ITEM *item, COLL_INFO *coll);
 bool Lara_Col_LandedBad(ITEM *item);

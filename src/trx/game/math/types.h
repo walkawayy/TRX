@@ -48,6 +48,18 @@ typedef enum {
     DIR_WEST = 3,
 } DIRECTION;
 
+typedef enum {
+    DIR8_UNKNOWN = -1,
+    DIR8_NORTH = 0,
+    DIR8_NORTHEAST = 1,
+    DIR8_EAST = 2,
+    DIR8_SOUTHEAST = 3,
+    DIR8_SOUTH = 4,
+    DIR8_SOUTHWEST = 5,
+    DIR8_WEST = 6,
+    DIR8_NORTHWEST = 7,
+} DIRECTION_8;
+
 typedef struct {
     XYZ_16 min;
     XYZ_16 max;

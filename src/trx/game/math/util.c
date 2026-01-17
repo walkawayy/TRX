@@ -44,6 +44,14 @@ DIRECTION Math_GetDirection(const int16_t angle)
     return (uint16_t)(angle + DEG_45) / DEG_90;
 }
 
+DIRECTION_8 Math_GetDirection8(const int16_t angle)
+{
+    // Round-to-nearest 45 degrees (8 slices).
+    // Works without needing a DEG_22_5 constant.
+    const int16_t bias = (int16_t)(DEG_45 / 2);
+    return (DIRECTION_8)((uint16_t)(angle + bias) / DEG_45);
+}
+
 DIRECTION Math_GetDirectionCone(const int16_t angle, const int16_t cone)
 {
     if (angle >= -cone && angle <= cone) {
@@ -58,6 +66,30 @@ DIRECTION Math_GetDirectionCone(const int16_t angle, const int16_t cone)
     return DIR_UNKNOWN;
 }
 
+DIRECTION_8 Math_GetDirectionCone8(const int16_t angle, const int16_t cone)
+{
+    // 8 canonical headings, consistent with your existing E/W sign convention.
+    if (angle >= -cone && angle <= cone) {
+        return DIR8_NORTH;
+    } else if (angle >= DEG_45 - cone && angle <= DEG_45 + cone) {
+        return DIR8_NORTHEAST;
+    } else if (angle >= DEG_90 - cone && angle <= DEG_90 + cone) {
+        return DIR8_EAST;
+    } else if (angle >= DEG_135 - cone && angle <= DEG_135 + cone) {
+        return DIR8_SOUTHEAST;
+    } else if (angle >= DEG_180 - cone || angle <= -DEG_180 + cone) {
+        return DIR8_SOUTH;
+    } else if (angle >= -DEG_135 - cone && angle <= -DEG_135 + cone) {
+        return DIR8_SOUTHWEST;
+    } else if (angle >= -DEG_90 - cone && angle <= -DEG_90 + cone) {
+        return DIR8_WEST;
+    } else if (angle >= -DEG_45 - cone && angle <= -DEG_45 + cone) {
+        return DIR8_NORTHWEST;
+    }
+
+    return DIR8_UNKNOWN;
+}
+
 int16_t Math_DirectionToAngle(const DIRECTION dir)
 {
     switch (dir) {
@@ -69,6 +101,30 @@ int16_t Math_DirectionToAngle(const DIRECTION dir)
         return -DEG_180;
     case DIR_WEST:
         return -DEG_90;
+    default:
+        return 0;
+    }
+}
+
+int16_t Math_Direction8ToAngle(const DIRECTION_8 dir)
+{
+    switch (dir) {
+    case DIR8_NORTH:
+        return 0;
+    case DIR8_NORTHEAST:
+        return DEG_45;
+    case DIR8_EAST:
+        return DEG_90;
+    case DIR8_SOUTHEAST:
+        return DEG_135;
+    case DIR8_SOUTH:
+        return -DEG_180;
+    case DIR8_SOUTHWEST:
+        return -DEG_135;
+    case DIR8_WEST:
+        return -DEG_90;
+    case DIR8_NORTHWEST:
+        return -DEG_45;
     default:
         return 0;
     }

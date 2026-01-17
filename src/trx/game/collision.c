@@ -5,6 +5,7 @@
 #include <trx/game/lara/common.h>
 #include <trx/game/matrix.h>
 #include <trx/game/rooms.h>
+#include <trx/log.h>
 #include <trx/utils.h>
 #include <trx/version.h>
 
@@ -328,11 +329,13 @@ void Collide_GetCollisionInfo(
     M_FillSide(
         coll, &coll->side_left, x_pos + x_left, z_pos + z_left, y_pos,
         obj_height, &room_num2);
+
     room_num2 = prev_room_num;
     M_FillSide(
         coll, &coll->side_right, x_pos + x_right, z_pos + z_right, y_pos,
         obj_height, &room_num2);
 
+    room_num2 = prev_room_num;
     M_FillSide(
         coll, &coll->side_left2, x_pos + x_left, z_pos + z_left, y_pos,
         obj_height, &room_num);
