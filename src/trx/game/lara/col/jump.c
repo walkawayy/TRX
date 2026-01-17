@@ -34,6 +34,10 @@ EDGE_CATCH Lara_Col_TestEdgeCatch(
         return EDGE_CATCH_NEG;
     }
 
+    if (Lara_Col_IsDiagonalLedge(coll)) {
+        return EDGE_CATCH_POS;
+    }
+
     return ABS(coll->side_left2.floor - coll->side_right2.floor) < SLOPE_DIF
         ? EDGE_CATCH_POS
         : EDGE_CATCH_NONE;
@@ -105,11 +109,17 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_direction = diagonal_ledge && dir == DIR_UNKNOWN;
+    if (diagonal_direction) {
+        dir = Math_GetDirection(item->rot.y);
+    }
     if (dir == DIR_UNKNOWN) {
         return false;
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
+    const int16_t angle =
+        diagonal_ledge ? item->rot.y : Math_DirectionToAngle(dir);
 
     if (Lara_Col_TestHangSwingIn(item, angle)) {
         Item_SwitchToAnim(item, LA(LA_REACH_TO_THIN_LEDGE), 0);
@@ -123,31 +133,36 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
     if (edge_catch == EDGE_CATCH_POS) {
         item->pos.y += coll->side_front.floor - bounds->min.y;
-        switch (Math_GetDirection(angle)) {
-        case DIR_NORTH:
-            item->pos.z = ROUND_TO_SECTOR_END(item->pos.z) - LARA_RADIUS;
-            item->pos.x += coll->shift.x;
-            break;
-
-        case DIR_EAST:
-            item->pos.x = ROUND_TO_SECTOR_END(item->pos.x) - LARA_RADIUS;
-            item->pos.z += coll->shift.z;
-            break;
-
-        case DIR_SOUTH:
-            item->pos.z = ROUND_TO_SECTOR(item->pos.z) + LARA_RADIUS;
-            item->pos.x += coll->shift.x;
-            break;
-
-        case DIR_WEST:
-            item->pos.x = ROUND_TO_SECTOR(item->pos.x) + LARA_RADIUS;
-            item->pos.z += coll->shift.z;
-            break;
-
-        default:
+        if (diagonal_ledge) {
             item->pos.x += coll->shift.x;
             item->pos.z += coll->shift.z;
-            break;
+        } else {
+            switch (Math_GetDirection(angle)) {
+            case DIR_NORTH:
+                item->pos.z = ROUND_TO_SECTOR_END(item->pos.z) - LARA_RADIUS;
+                item->pos.x += coll->shift.x;
+                break;
+
+            case DIR_EAST:
+                item->pos.x = ROUND_TO_SECTOR_END(item->pos.x) - LARA_RADIUS;
+                item->pos.z += coll->shift.z;
+                break;
+
+            case DIR_SOUTH:
+                item->pos.z = ROUND_TO_SECTOR(item->pos.z) + LARA_RADIUS;
+                item->pos.x += coll->shift.x;
+                break;
+
+            case DIR_WEST:
+                item->pos.x = ROUND_TO_SECTOR(item->pos.x) + LARA_RADIUS;
+                item->pos.z += coll->shift.z;
+                break;
+
+            default:
+                item->pos.x += coll->shift.x;
+                item->pos.z += coll->shift.z;
+                break;
+            }
         }
     } else {
         item->pos.y = edge - bounds->min.y;
@@ -200,11 +215,17 @@ static bool M_TestHangJumpUp(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_ledge = Lara_Col_IsDiagonalLedge(coll);
+    DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+    const bool diagonal_direction = diagonal_ledge && dir == DIR_UNKNOWN;
+    if (diagonal_direction) {
+        dir = Math_GetDirection(item->rot.y);
+    }
     if (dir == DIR_UNKNOWN) {
         return false;
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
+    const int16_t angle =
+        diagonal_ledge ? item->rot.y : Math_DirectionToAngle(dir);
 
     item->goal_anim_state = LS(LS_HANG);
     item->current_anim_state = LS(LS_HANG);
