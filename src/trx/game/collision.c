@@ -6,6 +6,7 @@
 #include <trx/game/items/anim.h>
 #include <trx/game/lara/common.h>
 #include <trx/game/matrix.h>
+#include <trx/game/output.h>
 #include <trx/game/rooms.h>
 #include <trx/utils.h>
 #include <trx/version.h>
@@ -27,7 +28,7 @@ static bool M_IsOnWalkable(
 static void M_FillSide(
     const COLL_INFO *const coll, COLL_SIDE *const side, const int32_t x_pos,
     const int32_t z_pos, const int32_t y_pos, const int32_t obj_height,
-    int16_t *const room_num)
+    int16_t *const room_num, int32_t sphere_num)
 {
     const int32_t y = y_pos - obj_height;
     const int32_t y_top = y - M_HEADROOM;
@@ -77,6 +78,13 @@ static void M_FillSide(
     } else if (sim_wall) {
         side->floor = NO_HEIGHT;
         side->ceiling = NO_HEIGHT;
+    }
+
+    if (g_Config.debug.enable_debug_collision) {
+        LARA_INFO *const lara = Lara_GetLaraInfo();
+        const XYZ_32 pos = { .x = x_pos, .y = y_pos, .z = z_pos };
+        const DEBUG_COLLISION_SPHERE sphere = { .pos = pos, coll->radius };
+        lara->debug_collision[sphere_num] = sphere;
     }
 }
 
@@ -382,24 +390,24 @@ void Collide_GetCollisionInfo(
 
     M_FillSide(
         coll, &coll->side_front, x_pos + x_front, z_pos + z_front, y_pos,
-        obj_height, &room_num);
+        obj_height, &room_num, 0);
 
     int16_t room_num2;
     room_num2 = prev_room_num;
     M_FillSide(
         coll, &coll->side_left, x_pos + x_left, z_pos + z_left, y_pos,
-        obj_height, &room_num2);
+        obj_height, &room_num2, 1);
     room_num2 = prev_room_num;
     M_FillSide(
         coll, &coll->side_right, x_pos + x_right, z_pos + z_right, y_pos,
-        obj_height, &room_num2);
+        obj_height, &room_num2, 2);
 
     M_FillSide(
         coll, &coll->side_left2, x_pos + x_left, z_pos + z_left, y_pos,
-        obj_height, &room_num);
+        obj_height, &room_num, 3);
     M_FillSide(
         coll, &coll->side_right2, x_pos + x_right, z_pos + z_right, y_pos,
-        obj_height, &room_num);
+        obj_height, &room_num, 4);
 
     const int16_t static_room_num = g_TRVersion >= 3 ? prev_room_num : room_num;
     if (Collide_CollideStaticObjects(

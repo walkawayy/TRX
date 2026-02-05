@@ -417,6 +417,15 @@ void Output_DrawSphere(const XYZ_16 center, const int32_t radius)
     Matrix_Pop();
 }
 
+void Output_DrawSphereAbs32(const XYZ_32 center, const int32_t radius)
+{
+    Matrix_PushUnit();
+    Matrix_TranslateAbs32(center);
+    Matrix_Scale(radius << W2V_SHIFT);
+    OutputSource_Misc_StageSphere();
+    Matrix_Pop();
+}
+
 void Output_DrawCuboid(const BOUNDS_16 *const bounds)
 {
     const int32_t x0 = bounds->min.x;

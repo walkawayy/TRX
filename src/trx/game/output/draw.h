@@ -34,4 +34,5 @@ void Output_DrawScreenFrame(
 void Output_DrawPhotoModeFrame(void);
 
 void Output_DrawSphere(XYZ_16 center, int32_t radius);
+void Output_DrawSphereAbs32(XYZ_32 center, int32_t radius);
 void Output_DrawCuboid(const BOUNDS_16 *bounds);
