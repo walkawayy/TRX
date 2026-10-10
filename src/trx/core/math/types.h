@@ -46,6 +46,10 @@ typedef enum {
     DIR_EAST = 1,
     DIR_SOUTH = 2,
     DIR_WEST = 3,
+    DIR_NORTH_EAST = 4,
+    DIR_SOUTH_EAST = 5,
+    DIR_SOUTH_WEST = 6,
+    DIR_NORTH_WEST = 7,
 } DIRECTION;
 
 typedef struct {

@@ -1,30 +1,23 @@
 #include <trx/core/math/func.h>
 
-#include <trx/core/math/const.h>
-#include <trx/core/math/geom.h>
-#include <trx/core/utils.h>
-
-#include <math.h>
-
 uint32_t Math_Sqrt(uint32_t n)
 {
     uint32_t result = 0;
-    uint32_t base = 0x40000000;
-    do {
-        do {
-            uint32_t based_result = base + result;
+    uint32_t bit = 1u << 30;
+
+    while (bit > n) {
+        bit >>= 2;
+    }
+
+    while (bit != 0) {
+        if (n >= result + bit) {
+            n -= result + bit;
+            result = (result >> 1) + bit;
+        } else {
             result >>= 1;
-            if (based_result > n) {
-                break;
-            }
-            n -= based_result;
-            result |= base;
-
-            base >>= 2;
-        } while (base);
-
-        base >>= 2;
-    } while (base);
+        }
+        bit >>= 2;
+    }
 
     return result;
 }
@@ -69,6 +62,37 @@ DIRECTION Math_GetDirection(const int16_t angle)
     return (uint16_t)(angle + DEG_45) / DEG_90;
 }
 
+DIRECTION Math_GetDirection8(const int16_t angle)
+{
+    int16_t normalized = angle % DEG_360;
+    if (normalized < 0) {
+        normalized += DEG_360;
+    }
+
+    if (normalized < DEG_45) {
+        return DIR_NORTH;
+    }
+    if (normalized < DEG_90) {
+        return DIR_NORTH_EAST;
+    }
+    if (normalized < DEG_135) {
+        return DIR_EAST;
+    }
+    if (normalized < DEG_180) {
+        return DIR_SOUTH_EAST;
+    }
+    if (normalized < DEG_225) {
+        return DIR_SOUTH;
+    }
+    if (normalized < DEG_270) {
+        return DIR_SOUTH_WEST;
+    }
+    if (normalized < DEG_315) {
+        return DIR_WEST;
+    }
+    return DIR_NORTH_WEST;
+}
+
 DIRECTION Math_GetDirectionCone(const int16_t angle, const int16_t cone)
 {
     if (angle >= -cone && angle <= cone) {
@@ -88,12 +112,20 @@ int16_t Math_DirectionToAngle(const DIRECTION dir)
     switch (dir) {
     case DIR_NORTH:
         return 0;
+    case DIR_NORTH_EAST:
+        return DEG_45;
     case DIR_EAST:
         return DEG_90;
+    case DIR_SOUTH_EAST:
+        return DEG_135;
     case DIR_SOUTH:
         return -DEG_180;
+    case DIR_SOUTH_WEST:
+        return -DEG_135;
     case DIR_WEST:
         return -DEG_90;
+    case DIR_NORTH_WEST:
+        return -DEG_45;
     default:
         return 0;
     }
@@ -121,21 +153,20 @@ int32_t Math_AngleMean(int32_t angle1, int32_t angle2, double ratio)
 
 int32_t Math_FloorDiv(const int32_t x, const int32_t divisor)
 {
-    return (x >= 0) ? x / divisor : -((-x + divisor - 1) / divisor);
+    return x / divisor;
 }
 
 int32_t Math_GCD(int32_t a, int32_t b)
 {
     while (b != 0) {
-        int32_t t = b;
-        b = a % b;
-        a = t;
+        const int32_t t = a % b;
+        a = b;
+        b = t;
     }
-    return a;
+    return ABS(a);
 }
 
-int32_t Math_ApplyPercent(const int32_t value, const float scale)
+int32_t Math_ApplyPercent(int32_t value, float scale)
 {
-    const int64_t scaled = (int64_t)value * lroundf(scale * 100.0f);
-    return scaled >= 0 ? (scaled + 99) / 100 : scaled / 100;
+    return (int32_t)ceilf(value * scale);
 }
