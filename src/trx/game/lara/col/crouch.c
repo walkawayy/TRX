@@ -451,7 +451,10 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
         coll, item->pos, item->room_num, M_CRAWL_TO_HANG_HEIGHT);
 
     int32_t edge = 0;
-    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(item, coll, &edge);
+    int16_t diagonal_angle = 0;
+    XZ_32 diagonal_point = {};
+    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(
+        item, coll, &edge, &diagonal_angle, &diagonal_point);
     if (edge_catch == EDGE_CATCH_NONE
         || (edge_catch == EDGE_CATCH_NEG
             && !Lara_Col_TestLadderHang(item, coll))) {
@@ -469,10 +472,12 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
     }
 
     const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
-    if (dir == DIR_UNKNOWN) {
+    if (edge_catch != EDGE_CATCH_DIAGONAL && dir == DIR_UNKNOWN) {
         return;
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
+    const int16_t angle = edge_catch == EDGE_CATCH_DIAGONAL
+        ? diagonal_angle
+        : Math_DirectionToAngle(dir);
 
     const SWING_CATCH swing_catch = Lara_Col_TestHangSwingIn(item, angle);
     if (swing_catch == SWING_CATCH_SLOW) {
@@ -522,6 +527,11 @@ static void M_CrawlToClimb(ITEM *const item, COLL_INFO *const coll)
         default:
             break;
         }
+    } else if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        item->pos.y = edge - bounds->min.y;
+        item->pos.x = diagonal_point.x;
+        item->pos.z = diagonal_point.z;
+        item->pos = XYZ_32_OffsetYaw(item->pos, angle + DEG_180, LARA_RADIUS);
     } else {
         item->pos.y = edge - bounds->min.y;
     }

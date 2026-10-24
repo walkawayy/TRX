@@ -81,6 +81,7 @@ typedef struct {
     int16_t electric;
     bool climb_status;
     XZ_32 corner_pos;
+    int16_t corner_rot;
     bool is_crouched;
     bool keep_crouched;
 

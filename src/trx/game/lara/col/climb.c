@@ -1,9 +1,11 @@
 #include <trx/config.h>
+#include <trx/core/log.h>
 #include <trx/game/input.h>
 #include <trx/game/lara.h>
 #include <trx/game/lara/util.h>
 #include <trx/game/rooms.h>
 #include <trx/game/rooms/geometry.h>
+#include <trx/game/rooms/split_edge.h>
 #include <trx/version.h>
 
 // clang-format off
@@ -37,6 +39,86 @@ typedef enum {
     // clang-format on
 } M_CLIMB_RESULT;
 
+static bool M_IsDiagonalAngle(const int16_t angle)
+{
+    return ((uint16_t)angle & 0x3FFF) == DEG_45;
+}
+
+static XYZ_32 M_GetClimbPos(
+    const XYZ_32 pos, const int16_t facing, const int32_t front,
+    const int32_t right)
+{
+    if (M_IsDiagonalAngle(facing)) {
+        const XYZ_32 front_pos = XYZ_32_OffsetYaw(pos, facing, front);
+        return XYZ_32_OffsetYaw(front_pos, facing + DEG_90, right);
+    }
+
+    switch (Math_GetDirection(facing)) {
+    case DIR_NORTH:
+        return (XYZ_32) { pos.x + right, pos.y, pos.z + front };
+    case DIR_EAST:
+        return (XYZ_32) { pos.x + front, pos.y, pos.z - right };
+    case DIR_SOUTH:
+        return (XYZ_32) { pos.x - right, pos.y, pos.z - front };
+    case DIR_WEST:
+        return (XYZ_32) { pos.x - front, pos.y, pos.z + right };
+    default:
+        break;
+    }
+    return (XYZ_32) { pos.x + front, pos.y, pos.z + front };
+}
+
+static bool M_GetDiagonalHangEdge(
+    const ITEM *const item, const int32_t max_distance, int16_t *const facing,
+    int32_t *const height, XZ_32 *const point)
+{
+    if (!M_IsDiagonalAngle(item->rot.y)) {
+        return false;
+    }
+
+    XYZ_32 front_pos =
+        XYZ_32_OffsetYaw(item->pos, item->rot.y, LARA_RADIUS);
+    // Stay just above the split-floor portal; probing a full sector above the
+    // head can cross the sky portal and resolve to a room without the ledge.
+    front_pos.y -= LARA_HEIGHT + WALL_L / 2;
+    int16_t room_num = item->room_num;
+    const int16_t start_room_num = room_num;
+    const SECTOR *const sector =
+        Room_GetSplitEdgeSector(front_pos, &room_num);
+    const bool found = Room_GetSplitEdge(
+        sector, front_pos, max_distance, facing, height, point);
+    const int32_t angle_delta =
+        found ? (int16_t)(*facing - item->rot.y) : 0;
+    const bool aligned = found
+        && (angle_delta < 0 ? -angle_delta : angle_delta) <= LARA_HANG_ANGLE;
+    if (item->current_anim_state == LS(LS_SHIMMY_LEFT)
+        || item->current_anim_state == LS(LS_SHIMMY_RIGHT)) {
+        LOG_DEBUG(
+            "diagonal shimmy edge probe: pos=(%d,%d,%d) "
+            "front=(%d,%d,%d) start_room=%d room=%d "
+            "split=%d type=%d found=%d facing=%d aligned=%d",
+            item->pos.x, item->pos.y, item->pos.z, front_pos.x, front_pos.y,
+            front_pos.z, start_room_num, room_num, sector->floor.is_split,
+            sector->floor.split.type, found,
+            found ? *facing : 0, aligned);
+    }
+    if (!aligned) {
+        return false;
+    }
+
+    return true;
+}
+
+static bool M_IsOnDiagonalHangEdge(
+    const ITEM *const item, const int32_t max_distance)
+{
+    int16_t facing;
+    int32_t height;
+    XZ_32 point;
+    return M_GetDiagonalHangEdge(
+        item, max_distance, &facing, &height, &point);
+}
+
 static int32_t M_GetDestinationClearance(const ITEM *const item)
 {
     XYZ_32 pos = {
@@ -64,41 +146,10 @@ static M_CLIMB_RESULT M_TestClimbPos(
     const int32_t origin, const int32_t item_height, int32_t *const shift)
 {
     const int32_t y = item->pos.y + origin;
-    int32_t x;
-    int32_t z;
-    int32_t x_front = 0;
-    int32_t z_front = 0;
-
-    switch (Math_GetDirection(item->rot.y)) {
-    case DIR_NORTH:
-        x = item->pos.x + right;
-        z = item->pos.z + front;
-        z_front = M_CLIMB_HANG_SHIFT;
-        break;
-
-    case DIR_EAST:
-        x = item->pos.x + front;
-        z = item->pos.z - right;
-        x_front = M_CLIMB_HANG_SHIFT;
-        break;
-
-    case DIR_SOUTH:
-        x = item->pos.x - right;
-        z = item->pos.z - front;
-        z_front = -M_CLIMB_HANG_SHIFT;
-        break;
-
-    case DIR_WEST:
-        x = item->pos.x - front;
-        z = item->pos.z + right;
-        x_front = -M_CLIMB_HANG_SHIFT;
-        break;
-
-    default:
-        x = front;
-        z = front;
-        break;
-    }
+    const XYZ_32 sample =
+        M_GetClimbPos(item->pos, item->rot.y, front, right);
+    const int32_t x = sample.x;
+    const int32_t z = sample.z;
 
     *shift = 0;
     bool hang = true;
@@ -138,8 +189,10 @@ static M_CLIMB_RESULT M_TestClimbPos(
         hang = false;
     }
 
-    const int32_t x2 = x + x_front;
-    const int32_t z2 = z + z_front;
+    const XYZ_32 front_sample = M_GetClimbPos(
+        item->pos, item->rot.y, front + M_CLIMB_HANG_SHIFT, right);
+    const int32_t x2 = front_sample.x;
+    const int32_t z2 = front_sample.z;
     sample_pos.x = x2;
     sample_pos.y = y;
     sample_pos.z = z2;
@@ -220,11 +273,13 @@ static M_CLIMB_RESULT M_TestClimbPos(
 
 static bool M_TestHangStop(
     const ITEM *const item, const COLL_INFO *const coll, const bool front_floor,
-    int32_t *const height_diff)
+    const bool is_diagonal, int32_t *const height_diff)
 {
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
     *height_diff = coll->side_front.floor - bounds->min.y;
-    return ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF
+    return (!is_diagonal
+            && ABS(coll->side_left2.floor - coll->side_right2.floor)
+                >= SLOPE_DIF)
         || coll->side_mid.ceiling >= 0 || coll->coll_type != COLL_FRONT
         || front_floor || coll->hit_static || *height_diff < -SLOPE_DIF
         || *height_diff > SLOPE_DIF;
@@ -238,32 +293,17 @@ static bool M_CanHangSideways(
     const XYZ_32 old_coll_pos = coll->old_pos;
     lara->move_angle = item->rot.y + angle;
 
-    int32_t x = item->pos.x;
-    int32_t z = item->pos.z;
-    switch (Math_GetDirection(lara->move_angle)) {
-    case DIR_NORTH:
-        z += M_CORNER_SIDE_SHIFT;
-        break;
-    case DIR_EAST:
-        x += M_CORNER_SIDE_SHIFT;
-        break;
-    case DIR_SOUTH:
-        z -= M_CORNER_SIDE_SHIFT;
-        break;
-    case DIR_WEST:
-        x -= M_CORNER_SIDE_SHIFT;
-        break;
-    default:
-        break;
-    }
-
-    item->pos.x = x;
-    item->pos.z = z;
+    const XYZ_32 shifted =
+        XYZ_32_OffsetYaw(item->pos, lara->move_angle, M_CORNER_SIDE_SHIFT);
+    item->pos.x = shifted.x;
+    item->pos.z = shifted.z;
     coll->old_pos.y = item->pos.y;
     const bool blocked = Lara_Col_HangTest(item, coll);
     if (blocked) {
         coll->old_pos.y = old_coll_pos.y;
     }
+    coll->old_pos.x = old_coll_pos.x;
+    coll->old_pos.z = old_coll_pos.z;
     item->pos.x = old_pos.x;
     item->pos.z = old_pos.z;
     lara->move_angle = item->rot.y + angle;
@@ -277,22 +317,10 @@ static bool M_IsValidHangPos(ITEM *const item, COLL_INFO *const coll)
         return false;
     }
 
-    switch (Math_GetDirection(item->rot.y)) {
-    case DIR_NORTH:
-        item->pos.z += M_HANG_SHIFT;
-        break;
-    case DIR_EAST:
-        item->pos.x += M_HANG_SHIFT;
-        break;
-    case DIR_SOUTH:
-        item->pos.z -= M_HANG_SHIFT;
-        break;
-    case DIR_WEST:
-        item->pos.x -= M_HANG_SHIFT;
-        break;
-    default:
-        break;
-    }
+    const XYZ_32 shifted =
+        XYZ_32_OffsetYaw(item->pos, item->rot.y, M_HANG_SHIFT);
+    item->pos.x = shifted.x;
+    item->pos.z = shifted.z;
 
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = -STEP_L * 2;
@@ -300,10 +328,13 @@ static bool M_IsValidHangPos(ITEM *const item, COLL_INFO *const coll)
     lara->move_angle = item->rot.y;
     Lara_Col_GetInfo(item, coll);
 
+    const bool is_diagonal =
+        M_IsOnDiagonalHangEdge(item, LARA_RADIUS * 2);
     if (!(coll->side_mid.ceiling < 0 && coll->coll_type == COLL_FRONT
           && !coll->hit_static
-          && ABS(coll->side_front.floor - coll->side_right2.floor)
-              < SLOPE_DIF)) {
+          && (is_diagonal
+              || ABS(coll->side_front.floor - coll->side_right2.floor)
+                  < SLOPE_DIF))) {
         return false;
     }
 
@@ -314,7 +345,7 @@ static bool M_IsValidHangPos(ITEM *const item, COLL_INFO *const coll)
     // rejected.
     const bool left_level =
         ABS(coll->side_front.floor - coll->side_left2.floor) < SLOPE_DIF;
-    if (left_level
+    if (!is_diagonal && left_level
         && ABS(coll->side_left2.floor - coll->side_right2.floor) >= SLOPE_DIF) {
         return false;
     }
@@ -413,17 +444,78 @@ static bool M_IsHangingOnLadder(const ITEM *const item, const COLL_INFO *coll)
     return false;
 }
 
+static int32_t M_TestDiagonalHangCorner(
+    ITEM *const item, COLL_INFO *const coll, const bool right)
+{
+    if (M_IsHangingOnLadder(item, coll)) {
+        return 0;
+    }
+
+    LARA_INFO *const lara = Lara_GetLaraInfo();
+    const XYZ_32 old_pos = item->pos;
+    const int16_t old_rot = item->rot.y;
+    const int16_t turn_steps[] = {
+        right ? DEG_45 : -DEG_45,
+        right ? -DEG_45 : DEG_45,
+    };
+    for (size_t i = 0; i < ARRAY_SIZE(turn_steps); i++) {
+        const int16_t target_rot = old_rot + turn_steps[i];
+        item->rot.y = target_rot;
+        int16_t edge_facing;
+        int32_t edge_height;
+        XZ_32 edge_point;
+        const bool found_edge = M_GetDiagonalHangEdge(
+            item, LARA_RADIUS * 2, &edge_facing, &edge_height, &edge_point);
+        (void)edge_height;
+        if (!found_edge) {
+            LOG_DEBUG(
+                "hang corner diagonal edge not found: from=(%d,%d) "
+                "facing=%d turn=%d",
+                old_pos.x, old_pos.z, target_rot, right);
+            item->rot.y = old_rot;
+            continue;
+        }
+
+        const XYZ_32 candidate = XYZ_32_OffsetYaw(
+            (XYZ_32) { edge_point.x, old_pos.y, edge_point.z },
+            edge_facing + DEG_180, LARA_RADIUS);
+        item->pos = candidate;
+        item->rot.y = edge_facing;
+        lara->move_angle = edge_facing;
+        const bool valid = M_IsValidHangPos(item, coll);
+        LOG_DEBUG(
+            "hang corner candidate: from=(%d,%d) edge=(%d,%d) "
+            "target=(%d,%d) facing=%d valid=%d",
+            old_pos.x, old_pos.z, edge_point.x, edge_point.z, candidate.x,
+            candidate.z, edge_facing, valid);
+        if (valid) {
+            lara->corner_pos = (XZ_32) { candidate.x, candidate.z };
+            lara->corner_rot = edge_facing - old_rot;
+            item->pos = old_pos;
+            item->rot.y = old_rot;
+            lara->move_angle = old_rot;
+            return 1;
+        }
+        item->pos = old_pos;
+        item->rot.y = old_rot;
+        lara->move_angle = old_rot;
+    }
+    return 0;
+}
+
 // Returns +1 when Lara can traverse an outer corner in the given
 // direction, -1 for an inner corner, and 0 when no turn is possible.
 // On success, lara->corner_pos holds the destination.
 static int32_t M_TestHangCorner(
     ITEM *const item, COLL_INFO *const coll, const bool right)
 {
-    if (!Item_TestAnimEqual(item, LA(LA_REACH_TO_HANG)) || coll->hit_static) {
+    const bool hanging_anim = Item_TestAnimEqual(item, LA(LA_REACH_TO_HANG));
+    if (!hanging_anim || coll->hit_static) {
         return 0;
     }
 
     LARA_INFO *const lara = Lara_GetLaraInfo();
+    lara->corner_rot = 0;
     const XYZ_32 old_pos = item->pos;
     const int16_t old_rot = item->rot.y;
     const int32_t front = coll->side_front.floor;
@@ -577,17 +669,63 @@ static int32_t M_TestLadderCorner(
 
 static bool M_TryCornerShimmy(ITEM *const item, COLL_INFO *const coll)
 {
-    if (!Lara_Col_IsCornerShimmyActive() || !g_Input.action
-        || item->hit_points <= 0
-        || !Item_TestAnimEqual(item, LA(LA_REACH_TO_HANG))
-        || !Item_TestFrameEqual(item, M_LF_HANG)) {
+    const bool diagonal = M_IsDiagonalAngle(item->rot.y);
+    const bool action = g_Input.action;
+    const bool alive = item->hit_points > 0;
+    const bool hanging_anim = Item_TestAnimEqual(item, LA(LA_REACH_TO_HANG));
+    const bool hang_frame = Item_TestFrameEqual(item, M_LF_HANG);
+    // Diagonal-to-flat transitions are part of diagonal ledge support, while
+    // the setting continues to gate ordinary cardinal corner shimmying.
+    if ((!Lara_Col_IsCornerShimmyActive() && !diagonal) || !action || !alive
+        || !hanging_anim || !hang_frame) {
+        if (diagonal) {
+            LOG_DEBUG(
+                "diagonal hang corner skipped: setting=%d action=%d alive=%d "
+                "hang_anim=%d hang_frame=%d anim=%d frame=%d",
+                Lara_Col_IsCornerShimmyActive(), action, alive, hanging_anim,
+                hang_frame, item->anim_num, item->frame_num);
+        }
         return false;
     }
 
     const bool left = g_Input.left || g_Input.step_left;
     const bool right = g_Input.right || g_Input.step_right;
     if (!left && !right) {
+        if (diagonal) {
+            LOG_DEBUG("diagonal hang corner skipped: no shimmy input");
+        }
         return false;
+    }
+
+    int32_t corner_result = M_TestDiagonalHangCorner(item, coll, !left);
+    if (corner_result > 0) {
+        item->goal_anim_state =
+            LS(left ? LS_SHIMMY_OUTER_LEFT : LS_SHIMMY_OUTER_RIGHT);
+        return true;
+    }
+    if (corner_result < 0) {
+        item->goal_anim_state =
+            LS(left ? LS_SHIMMY_INNER_LEFT : LS_SHIMMY_INNER_RIGHT);
+        return true;
+    }
+
+    if (diagonal) {
+        corner_result = M_TestHangCorner(item, coll, !left);
+        LOG_DEBUG(
+            "diagonal hang corner test: direction=%s result=%d "
+            "pos=(%d,%d) facing=%d",
+            left ? "left" : "right", corner_result, item->pos.x, item->pos.z,
+            item->rot.y);
+        if (corner_result > 0) {
+            item->goal_anim_state =
+                LS(left ? LS_SHIMMY_OUTER_LEFT : LS_SHIMMY_OUTER_RIGHT);
+            return true;
+        }
+        if (corner_result < 0) {
+            item->goal_anim_state =
+                LS(left ? LS_SHIMMY_INNER_LEFT : LS_SHIMMY_INNER_RIGHT);
+            return true;
+        }
     }
 
     if (M_CanHangSideways(item, coll, left ? -DEG_90 : DEG_90)) {
@@ -596,13 +734,15 @@ static bool M_TryCornerShimmy(ITEM *const item, COLL_INFO *const coll)
         return true;
     }
 
-    const int32_t result = M_TestHangCorner(item, coll, !left);
-    if (result > 0) {
+    if (!diagonal) {
+        corner_result = M_TestHangCorner(item, coll, !left);
+    }
+    if (corner_result > 0) {
         item->goal_anim_state =
             LS(left ? LS_SHIMMY_OUTER_LEFT : LS_SHIMMY_OUTER_RIGHT);
         return true;
     }
-    if (result < 0) {
+    if (corner_result < 0) {
         item->goal_anim_state =
             LS(left ? LS_SHIMMY_INNER_LEFT : LS_SHIMMY_INNER_RIGHT);
         return true;
@@ -673,41 +813,9 @@ static M_CLIMB_RESULT M_TestClimbUpPos(
     int32_t *const shift, int32_t *const ledge)
 {
     const int32_t y = item->pos.y - M_CLIMB_HEIGHT - STEP_L;
-    int32_t x;
-    int32_t z;
-    int32_t x_front = 0;
-    int32_t z_front = 0;
-
-    switch (Math_GetDirection(item->rot.y)) {
-    case DIR_NORTH:
-        x = item->pos.x + right;
-        z = item->pos.z + front;
-        z_front = M_HANG_SHIFT;
-        break;
-
-    case DIR_EAST:
-        x = item->pos.x + front;
-        z = item->pos.z - right;
-        x_front = M_HANG_SHIFT;
-        break;
-
-    case DIR_SOUTH:
-        x = item->pos.x - right;
-        z = item->pos.z - front;
-        z_front = -M_HANG_SHIFT;
-        break;
-
-    case DIR_WEST:
-        z = item->pos.z + right;
-        x = item->pos.x - front;
-        x_front = -M_HANG_SHIFT;
-        break;
-
-    default:
-        x = front;
-        z = front;
-        break;
-    }
+    const XYZ_32 sample = M_GetClimbPos(item->pos, item->rot.y, front, right);
+    const int32_t x = sample.x;
+    const int32_t z = sample.z;
 
     *shift = 0;
 
@@ -727,8 +835,10 @@ static M_CLIMB_RESULT M_TestClimbUpPos(
         *shift = ceiling;
     }
 
-    const int32_t x2 = x + x_front;
-    const int32_t z2 = z + z_front;
+    const XYZ_32 front_sample =
+        M_GetClimbPos(item->pos, item->rot.y, front + M_HANG_SHIFT, right);
+    const int32_t x2 = front_sample.x;
+    const int32_t z2 = front_sample.z;
     sample_pos.x = x2;
     sample_pos.z = z2;
     sector = Room_GetSector(sample_pos, &room_num);
@@ -1237,6 +1347,46 @@ static void M_ShimmyCorner(ITEM *const item, COLL_INFO *const coll)
 // snapped back to where she was.
 bool Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
 {
+    const bool is_shimmy =
+        item->current_anim_state == LS(LS_SHIMMY_LEFT)
+        || item->current_anim_state == LS(LS_SHIMMY_RIGHT);
+    const bool trace_diagonal_shimmy =
+        is_shimmy && M_IsDiagonalAngle(item->rot.y);
+    int16_t diagonal_facing;
+    int32_t diagonal_height;
+    XZ_32 diagonal_point;
+    const bool is_diagonal = M_GetDiagonalHangEdge(
+        item, coll->radius * 2, &diagonal_facing, &diagonal_height,
+        &diagonal_point);
+    const bool snapped = is_diagonal && is_shimmy;
+    if (snapped) {
+        const XYZ_32 target = XYZ_32_OffsetYaw(
+            (XYZ_32) {
+                .x = diagonal_point.x,
+                .y = item->pos.y,
+                .z = diagonal_point.z,
+            },
+            diagonal_facing + DEG_180, LARA_RADIUS);
+        const XZ_32 hang_pos = Room_GetSplitEdgeSnapPosition(
+            (XZ_32) { .x = item->pos.x, .z = item->pos.z },
+            (XZ_32) { .x = target.x, .z = target.z }, diagonal_facing);
+        item->pos.x = hang_pos.x;
+        item->pos.z = hang_pos.z;
+        item->rot.y = diagonal_facing;
+    }
+    if (trace_diagonal_shimmy) {
+        LOG_DEBUG(
+            "diagonal shimmy snap: snapped=%d pos=(%d,%d,%d) angle=%d "
+            "move_angle=%d",
+            snapped, item->pos.x, item->pos.y, item->pos.z, item->rot.y,
+            Lara_GetLaraInfo()->move_angle);
+    }
+    if (snapped) {
+        coll->old_pos.x = item->pos.x;
+        coll->old_pos.z = item->pos.z;
+    }
+    (void)diagonal_height;
+
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = NO_BAD_NEG;
     coll->bad_ceiling = 0;
@@ -1249,27 +1399,23 @@ bool Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     lara->move_angle = item->rot.y;
 
     const DIRECTION dir = Math_GetDirection(item->rot.y);
-    switch (dir) {
-    case DIR_NORTH:
-        item->pos.z += M_HANG_SHIFT;
-        break;
-    case DIR_EAST:
-        item->pos.x += M_HANG_SHIFT;
-        break;
-    case DIR_SOUTH:
-        item->pos.z -= M_HANG_SHIFT;
-        break;
-    case DIR_WEST:
-        item->pos.x -= M_HANG_SHIFT;
-        break;
-    default:
-        break;
-    }
+    const XYZ_32 shifted =
+        XYZ_32_OffsetYaw(item->pos, item->rot.y, M_HANG_SHIFT);
+    item->pos.x = shifted.x;
+    item->pos.z = shifted.z;
 
     coll->bad_pos = NO_BAD_POS;
     coll->bad_neg = -STEPUP_HEIGHT;
     coll->bad_ceiling = 0;
     Lara_Col_GetInfo(item, coll);
+    if (trace_diagonal_shimmy) {
+        LOG_DEBUG(
+            "diagonal shimmy tangent collision: type=%d front_floor=%d "
+            "mid_floor=%d ceiling=%d shift=(%d,%d) hit_static=%d",
+            coll->coll_type, coll->side_front.floor, coll->side_mid.floor,
+            coll->side_mid.ceiling, coll->shift.x, coll->shift.z,
+            coll->hit_static);
+    }
 
     if (lara->climb_status) {
         if (!g_Input.action || item->hit_points <= 0) {
@@ -1296,11 +1442,19 @@ bool Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
             return false;
         }
 
-        if (!Lara_Col_TestLadderHang(item, coll)) {
+        const bool ladder_hang = Lara_Col_TestLadderHang(item, coll);
+        if (!ladder_hang) {
             int32_t height_diff = 0;
-            if ((item->current_anim_state != LS(LS_SHIMMY_LEFT)
-                 && item->current_anim_state != LS(LS_SHIMMY_RIGHT))
-                || M_TestHangStop(item, coll, flag, &height_diff)) {
+            const bool stopped = !is_shimmy
+                || M_TestHangStop(
+                    item, coll, flag, is_diagonal, &height_diff);
+            if (trace_diagonal_shimmy) {
+                LOG_DEBUG(
+                    "diagonal shimmy ladder check: valid=%d stopped=%d "
+                    "climb_status=%d",
+                    ladder_hang, stopped, lara->climb_status);
+            }
+            if (stopped) {
                 item->pos = coll->old_pos;
                 item->goal_anim_state = LS(LS_HANG);
                 item->current_anim_state = LS(LS_HANG);
@@ -1338,7 +1492,19 @@ bool Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
     }
 
     int32_t height_diff = 0;
-    if (M_TestHangStop(item, coll, flag, &height_diff)) {
+    const bool stopped =
+        M_TestHangStop(item, coll, flag, is_diagonal, &height_diff);
+    if (trace_diagonal_shimmy) {
+        LOG_DEBUG(
+            "diagonal shimmy collision result: stopped=%d diagonal=%d "
+            "type=%d front_floor=%d left_floor=%d right_floor=%d "
+            "mid_ceiling=%d height_diff=%d shift=(%d,%d) hit_static=%d",
+            stopped, is_diagonal, coll->coll_type, coll->side_front.floor,
+            coll->side_left2.floor, coll->side_right2.floor,
+            coll->side_mid.ceiling, height_diff, coll->shift.x, coll->shift.z,
+            coll->hit_static);
+    }
+    if (stopped) {
         item->pos = coll->old_pos;
         if (item->current_anim_state == LS(LS_SHIMMY_LEFT)
             || item->current_anim_state == LS(LS_SHIMMY_RIGHT)) {
@@ -1349,23 +1515,32 @@ bool Lara_Col_HangTest(ITEM *const item, COLL_INFO *const coll)
         return true;
     }
 
-    switch (dir) {
-    case DIR_NORTH:
-    case DIR_SOUTH:
-        item->pos.z += coll->shift.z;
-        break;
+    if (!is_diagonal) {
+        switch (dir) {
+        case DIR_NORTH:
+        case DIR_SOUTH:
+            item->pos.z += coll->shift.z;
+            break;
 
-    case DIR_EAST:
-    case DIR_WEST:
-        item->pos.x += coll->shift.x;
-        break;
+        case DIR_EAST:
+        case DIR_WEST:
+            item->pos.x += coll->shift.x;
+            break;
 
-    default:
-        break;
+        default:
+            break;
+        }
     }
 
     if (g_TRVersion >= 2 || (height_diff >= -STEP_L && height_diff <= STEP_L)) {
         item->pos.y += height_diff;
+    }
+    if (trace_diagonal_shimmy) {
+        LOG_DEBUG(
+            "diagonal shimmy result: pos=(%d,%d,%d) gravity=%d "
+            "fall_speed=%d",
+            item->pos.x, item->pos.y, item->pos.z, item->gravity,
+            item->fall_speed);
     }
     return false;
 }

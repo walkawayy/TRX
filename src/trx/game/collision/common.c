@@ -407,48 +407,61 @@ void Collide_GetCollisionInfo(
             sector, (XYZ_32) { pos.x, lara_item->pos.y, pos.z });
     }
 
-    XZ_32 probe_left = {};
-    XZ_32 probe_right = {};
     XZ_32 probe_front = {};
-    switch (coll->quadrant) {
-    case DIR_NORTH:
-        probe_front.x = (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT;
-        probe_front.z = coll->radius;
-        probe_left.x = -coll->radius;
-        probe_left.z = coll->radius;
-        probe_right.x = coll->radius;
-        probe_right.z = coll->radius;
-        break;
+    XZ_32 probe_left_pos = {};
+    XZ_32 probe_right_pos = {};
+    if (((uint16_t)coll->facing & 0x3FFF) == DEG_45) {
+        const XZ_32 probe_right = {
+            .x = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT,
+            .z = -((coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT),
+        };
+        probe_front = (XZ_32) {
+            .x = (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT,
+            .z = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT,
+        };
+        probe_left_pos = (XZ_32) {
+            .x = probe_front.x - probe_right.x,
+            .z = probe_front.z - probe_right.z,
+        };
+        probe_right_pos = (XZ_32) {
+            .x = probe_front.x + probe_right.x,
+            .z = probe_front.z + probe_right.z,
+        };
+    } else {
+        switch (coll->quadrant) {
+        case DIR_NORTH:
+            probe_front.x =
+                (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT;
+            probe_front.z = coll->radius;
+            probe_left_pos = (XZ_32) { -coll->radius, coll->radius };
+            probe_right_pos = (XZ_32) { coll->radius, coll->radius };
+            break;
 
-    case DIR_EAST:
-        probe_front.x = coll->radius;
-        probe_front.z = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT;
-        probe_left.x = coll->radius;
-        probe_left.z = coll->radius;
-        probe_right.x = coll->radius;
-        probe_right.z = -coll->radius;
-        break;
+        case DIR_EAST:
+            probe_front.x = coll->radius;
+            probe_front.z = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT;
+            probe_left_pos = (XZ_32) { coll->radius, coll->radius };
+            probe_right_pos = (XZ_32) { coll->radius, -coll->radius };
+            break;
 
-    case DIR_SOUTH:
-        probe_front.x = (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT;
-        probe_front.z = -coll->radius;
-        probe_left.x = coll->radius;
-        probe_left.z = -coll->radius;
-        probe_right.x = -coll->radius;
-        probe_right.z = -coll->radius;
-        break;
+        case DIR_SOUTH:
+            probe_front.x =
+                (coll->radius * Math_Sin(coll->facing)) >> W2V_SHIFT;
+            probe_front.z = -coll->radius;
+            probe_left_pos = (XZ_32) { coll->radius, -coll->radius };
+            probe_right_pos = (XZ_32) { -coll->radius, -coll->radius };
+            break;
 
-    case DIR_WEST:
-        probe_front.x = -coll->radius;
-        probe_front.z = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT;
-        probe_left.x = -coll->radius;
-        probe_left.z = -coll->radius;
-        probe_right.x = -coll->radius;
-        probe_right.z = coll->radius;
-        break;
+        case DIR_WEST:
+            probe_front.x = -coll->radius;
+            probe_front.z = (coll->radius * Math_Cos(coll->facing)) >> W2V_SHIFT;
+            probe_left_pos = (XZ_32) { -coll->radius, -coll->radius };
+            probe_right_pos = (XZ_32) { -coll->radius, coll->radius };
+            break;
 
-    default:
-        break;
+        default:
+            break;
+        }
     }
 
     if (reset_room) {
@@ -460,21 +473,24 @@ void Collide_GetCollisionInfo(
 
     int16_t room_num2;
     room_num2 = prev_room_num;
-    M_FillSide(coll, &coll->side_left, pos, probe_left, obj_height, &room_num2);
+    M_FillSide(
+        coll, &coll->side_left, pos, probe_left_pos, obj_height, &room_num2);
     room_num2 = prev_room_num;
     M_FillSide(
-        coll, &coll->side_right, pos, probe_right, obj_height, &room_num2);
+        coll, &coll->side_right, pos, probe_right_pos, obj_height, &room_num2);
 
-    M_FillSide(coll, &coll->side_left2, pos, probe_left, obj_height, &room_num);
     M_FillSide(
-        coll, &coll->side_right2, pos, probe_right, obj_height, &room_num);
+        coll, &coll->side_left2, pos, probe_left_pos, obj_height, &room_num);
+    M_FillSide(
+        coll, &coll->side_right2, pos, probe_right_pos, obj_height, &room_num);
 
     COLL_SIDE *const sides[] = {
         &coll->side_front, &coll->side_left,   &coll->side_right,
         &coll->side_left2, &coll->side_right2,
     };
     const XZ_32 probes[] = {
-        probe_front, probe_left, probe_right, probe_left, probe_right,
+        probe_front, probe_left_pos, probe_right_pos, probe_left_pos,
+        probe_right_pos,
     };
     for (int32_t i = 0; i < (int32_t)ARRAY_SIZE(sides); i++) {
         M_BlockSideIfUnreachable(
@@ -574,13 +590,13 @@ void Collide_GetCollisionInfo(
             case DIR_NORTH:
             case DIR_SOUTH:
                 coll->shift.x = Room_FindGridShift(
-                    pos.x + probe_left.x, pos.x + probe_front.x);
+                    pos.x + probe_left_pos.x, pos.x + probe_front.x);
                 break;
 
             case DIR_EAST:
             case DIR_WEST:
                 coll->shift.z = Room_FindGridShift(
-                    pos.z + probe_left.z, pos.z + probe_front.z);
+                    pos.z + probe_left_pos.z, pos.z + probe_front.z);
                 break;
 
             default:
@@ -602,13 +618,13 @@ void Collide_GetCollisionInfo(
             case DIR_NORTH:
             case DIR_SOUTH:
                 coll->shift.x = Room_FindGridShift(
-                    pos.x + probe_right.x, pos.x + probe_front.x);
+                    pos.x + probe_right_pos.x, pos.x + probe_front.x);
                 break;
 
             case DIR_EAST:
             case DIR_WEST:
                 coll->shift.z = Room_FindGridShift(
-                    pos.z + probe_right.z, pos.z + probe_front.z);
+                    pos.z + probe_right_pos.z, pos.z + probe_front.z);
                 break;
 
             default:

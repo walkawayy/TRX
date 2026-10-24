@@ -9,6 +9,7 @@ typedef enum {
     EDGE_CATCH_NEG  = -1,
     EDGE_CATCH_NONE = 0,
     EDGE_CATCH_POS  = 1,
+    EDGE_CATCH_DIAGONAL = 2,
     // clang-format on
 } EDGE_CATCH;
 
@@ -38,7 +39,8 @@ int16_t Lara_Col_GetShimmyState(LARA_STATE_ID state);
 bool Lara_Col_TestCeiling(ITEM *item, const COLL_INFO *coll);
 SWING_CATCH Lara_Col_TestHangSwingIn(const ITEM *item, int16_t angle);
 EDGE_CATCH Lara_Col_TestEdgeCatch(
-    const ITEM *item, const COLL_INFO *coll, int32_t *edge);
+    const ITEM *item, const COLL_INFO *coll, int32_t *edge,
+    int16_t *diagonal_angle, XZ_32 *diagonal_point);
 bool Lara_Col_Fallen(ITEM *item, const COLL_INFO *coll);
 void Lara_Col_DeflectEdgeJump(ITEM *item, COLL_INFO *coll);
 LANDED_STATE Lara_Col_LandedBad(ITEM *item);

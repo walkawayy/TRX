@@ -1,4 +1,5 @@
 #include <trx/config.h>
+#include <trx/core/log.h>
 #include <trx/game/anims/common.h>
 #include <trx/game/demo.h>
 #include <trx/game/input.h>
@@ -70,6 +71,13 @@ static bool M_TryMonkeyGrab(
 static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
 {
     if (!M_CanGrab(coll)) {
+        if (g_Input.action) {
+            LOG_DEBUG(
+                "diagonal hang attempt blocked before edge test: "
+                "gun_status=%d hit_static=%d coll_type=%d",
+                Lara_GetLaraInfo()->gun_status, coll->hit_static,
+                coll->coll_type);
+        }
         return false;
     }
 
@@ -77,29 +85,66 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
         return true;
     }
 
-    if (coll->coll_type != COLL_FRONT || coll->side_mid.ceiling > -STEPUP_HEIGHT
-        || coll->side_mid.floor < 200) {
+    int32_t edge = 0;
+    int16_t diagonal_angle = 0;
+    XZ_32 diagonal_point = {};
+    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(
+        item, coll, &edge, &diagonal_angle, &diagonal_point);
+    LOG_DEBUG(
+        "reach hang test: pos=(%d,%d,%d) rot=%d facing=%d fall_speed=%d "
+        "coll_type=%d ceiling=%d mid_floor=%d edge_catch=%d edge=%d "
+        "edge_angle=%d edge_point=(%d,%d)",
+        item->pos.x, item->pos.y, item->pos.z, item->rot.y, coll->facing,
+        item->fall_speed, coll->coll_type, coll->side_mid.ceiling,
+        coll->side_mid.floor, edge_catch, edge, diagonal_angle,
+        diagonal_point.x, diagonal_point.z);
+    if ((coll->coll_type != COLL_FRONT
+         && edge_catch != EDGE_CATCH_DIAGONAL)
+        || coll->side_mid.ceiling > -STEPUP_HEIGHT
+        || (edge_catch != EDGE_CATCH_DIAGONAL
+            && coll->side_mid.floor < 200)) {
+        LOG_DEBUG(
+            "reach hang rejected by collision gate: front=%d diagonal=%d "
+            "ceiling_ok=%d mid_floor_ok=%d",
+            coll->coll_type == COLL_FRONT,
+            edge_catch == EDGE_CATCH_DIAGONAL,
+            coll->side_mid.ceiling <= -STEPUP_HEIGHT,
+            edge_catch == EDGE_CATCH_DIAGONAL
+                || coll->side_mid.floor >= 200);
         return false;
     }
 
-    int32_t edge;
-    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(item, coll, &edge);
     bool ladder_hang = false;
     if (edge_catch == EDGE_CATCH_NEG) {
         ladder_hang = Lara_Col_TestLadderHang(item, coll);
     }
     if (edge_catch == EDGE_CATCH_NONE
         || (edge_catch == EDGE_CATCH_NEG && !ladder_hang)) {
+        LOG_DEBUG(
+            "reach hang rejected: no edge catch or ladder hang "
+            "(edge_catch=%d ladder_hang=%d)",
+            edge_catch, ladder_hang);
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
-    if (dir == DIR_UNKNOWN) {
-        return false;
+    DIRECTION dir = DIR_UNKNOWN;
+    int16_t angle;
+    if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        angle = diagonal_angle;
+    } else {
+        dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+        if (dir == DIR_UNKNOWN) {
+            return false;
+        }
+        angle = Math_DirectionToAngle(dir);
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
 
-    const SWING_CATCH swing_catch = Lara_Col_TestHangSwingIn(item, angle);
+    // Swing-in probing only handles cardinal directions, so diagonal catches
+    // must use the normal reach-to-hang animation.
+    const SWING_CATCH swing_catch =
+        edge_catch == EDGE_CATCH_DIAGONAL
+        ? SWING_CATCH_NONE
+        : Lara_Col_TestHangSwingIn(item, angle);
     if (swing_catch == SWING_CATCH_SLOW) {
         Item_SwitchToAnim(item, LA(LA_SWING_IN_SLOW), 0);
     } else if (swing_catch == SWING_CATCH_FAST) {
@@ -142,6 +187,11 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
             item->pos.z += coll->shift.z;
             break;
         }
+    } else if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        item->pos.y = edge - bounds->min.y;
+        item->pos.x = diagonal_point.x;
+        item->pos.z = diagonal_point.z;
+        item->pos = XYZ_32_OffsetYaw(item->pos, angle + DEG_180, LARA_RADIUS);
     } else {
         item->pos.y = edge - bounds->min.y;
     }
@@ -151,6 +201,11 @@ static bool M_TestHangJump(ITEM *const item, COLL_INFO *const coll)
     item->gravity = true;
     item->fall_speed = 1;
     Lara_GetLaraInfo()->gun_status = LGS_HANDS_BUSY;
+    if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        LOG_DEBUG(
+            "diagonal reach grab accepted: pos=(%d,%d,%d) angle=%d",
+            item->pos.x, item->pos.y, item->pos.z, item->rot.y);
+    }
     return true;
 }
 
@@ -158,6 +213,12 @@ static bool M_TestHangJumpUp(ITEM *const item, COLL_INFO *const coll)
 {
     LARA_INFO *const lara = Lara_GetLaraInfo();
     if (!M_CanGrab(coll)) {
+        if (g_Input.action) {
+            LOG_DEBUG(
+                "up-jump hang attempt blocked before edge test: "
+                "gun_status=%d hit_static=%d coll_type=%d",
+                lara->gun_status, coll->hit_static, coll->coll_type);
+        }
         return false;
     }
 
@@ -165,25 +226,54 @@ static bool M_TestHangJumpUp(ITEM *const item, COLL_INFO *const coll)
         return true;
     }
 
-    if (coll->coll_type != COLL_FRONT
+    int32_t edge = 0;
+    int16_t diagonal_angle = 0;
+    XZ_32 diagonal_point = {};
+    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(
+        item, coll, &edge, &diagonal_angle, &diagonal_point);
+    LOG_DEBUG(
+        "up-jump hang test: pos=(%d,%d,%d) rot=%d facing=%d fall_speed=%d "
+        "coll_type=%d ceiling=%d edge_catch=%d edge=%d edge_angle=%d "
+        "edge_point=(%d,%d)",
+        item->pos.x, item->pos.y, item->pos.z, item->rot.y, coll->facing,
+        item->fall_speed, coll->coll_type, coll->side_mid.ceiling, edge_catch,
+        edge, diagonal_angle, diagonal_point.x, diagonal_point.z);
+    if ((coll->coll_type != COLL_FRONT
+         && edge_catch != EDGE_CATCH_DIAGONAL)
         || coll->side_mid.ceiling
             > (lara->climb_status ? M_LADDER_CLEARANCE : M_HEAD_CLEARANCE)) {
+        LOG_DEBUG(
+            "up-jump hang rejected by collision gate: front=%d "
+            "diagonal=%d ceiling_ok=%d",
+            coll->coll_type == COLL_FRONT,
+            edge_catch == EDGE_CATCH_DIAGONAL,
+            coll->side_mid.ceiling
+                <= (lara->climb_status ? M_LADDER_CLEARANCE
+                                       : M_HEAD_CLEARANCE));
         return false;
     }
 
-    int32_t edge;
-    const EDGE_CATCH edge_catch = Lara_Col_TestEdgeCatch(item, coll, &edge);
     if (edge_catch == EDGE_CATCH_NONE
         || (edge_catch == EDGE_CATCH_NEG
             && !Lara_Col_TestLadderHang(item, coll))) {
+        LOG_DEBUG(
+            "up-jump hang rejected: no edge catch or ladder hang "
+            "(edge_catch=%d)",
+            edge_catch);
         return false;
     }
 
-    const DIRECTION dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
-    if (dir == DIR_UNKNOWN) {
-        return false;
+    DIRECTION dir = DIR_UNKNOWN;
+    int16_t angle;
+    if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        angle = diagonal_angle;
+    } else {
+        dir = Math_GetDirectionCone(item->rot.y, LARA_HANG_ANGLE);
+        if (dir == DIR_UNKNOWN) {
+            return false;
+        }
+        angle = Math_DirectionToAngle(dir);
     }
-    const int16_t angle = Math_DirectionToAngle(dir);
 
     item->goal_anim_state = LS(LS_HANG);
     item->current_anim_state = LS(LS_HANG);
@@ -192,19 +282,31 @@ static bool M_TestHangJumpUp(ITEM *const item, COLL_INFO *const coll)
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
     if (edge_catch == EDGE_CATCH_POS) {
         item->pos.y += coll->side_front.floor - bounds->min.y;
+    } else if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        item->pos.y = edge - bounds->min.y;
+        item->pos.x = diagonal_point.x;
+        item->pos.z = diagonal_point.z;
+        item->pos = XYZ_32_OffsetYaw(item->pos, angle + DEG_180, LARA_RADIUS);
     } else {
         item->pos.y = edge - bounds->min.y;
         // XXX: prevent interpolation in 60fps shifting Lara below the edge
         // catch position then making her drift back up to it.
         item->interp.prev.pos.y = item->pos.y - item->fall_speed;
     }
-    item->pos.x += coll->shift.x;
-    item->pos.z += coll->shift.z;
+    if (edge_catch != EDGE_CATCH_DIAGONAL) {
+        item->pos.x += coll->shift.x;
+        item->pos.z += coll->shift.z;
+    }
     item->rot.y = angle;
     item->speed = 0;
     item->gravity = false;
     item->fall_speed = 0;
     lara->gun_status = LGS_HANDS_BUSY;
+    if (edge_catch == EDGE_CATCH_DIAGONAL) {
+        LOG_DEBUG(
+            "diagonal up-jump grab accepted: pos=(%d,%d,%d) angle=%d",
+            item->pos.x, item->pos.y, item->pos.z, item->rot.y);
+    }
     return true;
 }
 
@@ -614,8 +716,55 @@ static void M_FastFall(ITEM *const item, COLL_INFO *const coll)
 }
 
 EDGE_CATCH Lara_Col_TestEdgeCatch(
-    const ITEM *const item, const COLL_INFO *const coll, int32_t *const edge)
+    const ITEM *const item, const COLL_INFO *const coll, int32_t *const edge,
+    int16_t *const diagonal_angle, XZ_32 *const diagonal_point)
 {
+    const XYZ_32 probe_pos =
+        XYZ_32_OffsetYaw(item->pos, coll->facing, coll->radius);
+    XYZ_32 floor_probe = probe_pos;
+    floor_probe.y -= LARA_HEIGHT + WALL_L / 2;
+    int16_t room_num = item->room_num;
+    const SECTOR *const sector =
+        Room_GetSplitEdgeSector(floor_probe, &room_num);
+    int16_t facing;
+    int32_t height;
+    XZ_32 point;
+    const bool has_split_edge = Room_GetSplitEdge(
+        sector, probe_pos, coll->radius * 2, &facing, &height, &point);
+    if (g_Input.action) {
+        LOG_DEBUG(
+            "edge probe: item=(%d,%d,%d) probe=(%d,%d,%d) room=%d "
+            "split=%d split_type=%d sector_floor=%d found=%d",
+            item->pos.x, item->pos.y, item->pos.z, floor_probe.x,
+            floor_probe.y, floor_probe.z, room_num, sector->floor.is_split,
+            sector->floor.split.type, sector->floor.height, has_split_edge);
+    }
+    if (has_split_edge) {
+        const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
+        const int32_t hdif1 = height - item->pos.y - bounds->min.y;
+        const int32_t hdif2 = hdif1 - item->fall_speed;
+        if ((hdif1 < 0 && hdif2 < 0) || (hdif1 > 0 && hdif2 > 0)) {
+            return EDGE_CATCH_NONE;
+        }
+
+        const int32_t angle_delta = (int16_t)(facing - coll->facing);
+        if (g_Input.action) {
+            LOG_DEBUG(
+                "edge candidate: facing=%d requested_facing=%d "
+                "angle_delta=%d max_angle=%d edge_height=%d "
+                "edge_point=(%d,%d)",
+                facing, coll->facing, angle_delta, LARA_HANG_ANGLE, height,
+                point.x, point.z);
+        }
+        if ((angle_delta < 0 ? -angle_delta : angle_delta)
+            <= LARA_HANG_ANGLE) {
+            *edge = height;
+            *diagonal_angle = facing;
+            *diagonal_point = point;
+            return EDGE_CATCH_DIAGONAL;
+        }
+    }
+
     const BOUNDS_16 *const bounds = Item_GetBoundsAccurate(item);
     int32_t hdif1 = coll->side_front.floor - bounds->min.y;
     int32_t hdif2 = hdif1 + item->fall_speed;
@@ -630,12 +779,28 @@ EDGE_CATCH Lara_Col_TestEdgeCatch(
         } else {
             *edge = hdif1 & ~(STEP_L - 1);
         }
+        if (g_Input.action) {
+            LOG_DEBUG(
+                "edge catch fallback: negative edge=%d front_floor=%d "
+                "bounds_min_y=%d fall_speed=%d",
+                *edge, coll->side_front.floor, bounds->min.y,
+                item->fall_speed);
+        }
         return EDGE_CATCH_NEG;
     }
 
-    return ABS(coll->side_left2.floor - coll->side_right2.floor) < SLOPE_DIF
+    const EDGE_CATCH result =
+        ABS(coll->side_left2.floor - coll->side_right2.floor) < SLOPE_DIF
         ? EDGE_CATCH_POS
         : EDGE_CATCH_NONE;
+    if (g_Input.action) {
+        LOG_DEBUG(
+            "edge catch fallback: result=%d left_floor=%d right_floor=%d "
+            "front_floor=%d fall_speed=%d",
+            result, coll->side_left2.floor, coll->side_right2.floor,
+            coll->side_front.floor, item->fall_speed);
+    }
+    return result;
 }
 
 SWING_CATCH Lara_Col_TestHangSwingIn(

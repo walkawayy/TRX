@@ -57,6 +57,7 @@ static void M_SetCornerAnim(
     coll->enable_baddie_push = 0;
 
     if (item->hit_points <= 0) {
+        Lara_GetLaraInfo()->corner_rot = 0;
         item->goal_anim_state = LS(LS_JUMP_FORWARD);
         item->current_anim_state = LS(LS_JUMP_FORWARD);
         Item_SwitchToAnim(item, LA(LA_FALL_START), 0);
@@ -105,7 +106,12 @@ static void M_SetCornerAnim(
     coll->old_pos.z = lara->corner_pos.z;
     item->pos.x = lara->corner_pos.x;
     item->pos.z = lara->corner_pos.z;
-    item->rot.y += rot;
+    const int16_t corner_rot =
+        Lara_GetLaraInfo()->corner_rot != 0
+        ? Lara_GetLaraInfo()->corner_rot
+        : rot;
+    item->rot.y += corner_rot;
+    Lara_GetLaraInfo()->corner_rot = 0;
     Interpolation_RememberItem(item);
 }
 

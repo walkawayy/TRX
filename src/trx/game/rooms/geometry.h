@@ -16,12 +16,17 @@ SECTOR *Room_GetUnitSector(
     const ROOM *room, int32_t x_sector, int32_t z_sector);
 SECTOR *Room_GetPitSector(const SECTOR *sector, int32_t x, int32_t z);
 SECTOR *Room_GetSkySector(const SECTOR *sector, int32_t x, int32_t z);
+SECTOR *Room_GetSplitEdgeSector(XYZ_32 pos, int16_t *room_num);
 
 void Room_SetAbyssHeight(int32_t height);
 bool Room_IsAbyssHeight(int32_t height);
 
 HEIGHT_TYPE Room_GetHeightType(void);
 XZ_16 Room_GetTiltType(const SECTOR *sector, XYZ_32 pos);
+// Finds the high side of a split-floor edge within max_distance of pos.
+bool Room_GetSplitEdge(
+    const SECTOR *sector, XYZ_32 pos, int32_t max_distance, int16_t *facing,
+    int32_t *height, XZ_32 *point);
 
 int32_t Room_GetHeight(const SECTOR *sector, XYZ_32 pos);
 int32_t Room_GetHeightEx(

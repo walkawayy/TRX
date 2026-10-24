@@ -363,6 +363,11 @@ unit_tests += {
 }
 
 unit_tests += {
+  'name': 'trx/game/rooms/split_edge',
+  'engine': ['game/rooms/split_edge.c'],
+}
+
+unit_tests += {
   'name': 'trx/game/cutseq/decoder',
   'engine': ['game/cutseq/decoder.c'],
 }

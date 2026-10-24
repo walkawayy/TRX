@@ -8,6 +8,7 @@
 #include <trx/game/items.h>
 #include <trx/game/objects.h>
 #include <trx/game/rooms.h>
+#include <trx/game/rooms/split_edge.h>
 
 // How many rooms around the mover are searched for something barring the way.
 #define M_MAX_BLOCK_ROOMS 20
@@ -372,6 +373,38 @@ SECTOR *Room_GetSkySector(
     return (SECTOR *)sector;
 }
 
+SECTOR *Room_GetSplitEdgeSector(
+    const XYZ_32 pos, int16_t *const room_num)
+{
+    SECTOR *sector = Room_GetSector(pos, room_num);
+    if (sector->floor.is_split) {
+        return sector;
+    }
+
+    SECTOR *const sky_sector = Room_GetSkySector(sector, pos.x, pos.z);
+    if (sky_sector->floor.is_split) {
+        return sky_sector;
+    }
+
+    for (int32_t i = 0; i < Room_GetCount(); i++) {
+        const ROOM *const room = Room_Get(i);
+        const BOUNDS_32 bounds = Room_GetRoomBounds(room);
+        if (pos.x < bounds.min.x || pos.x > bounds.max.x
+            || pos.z < bounds.min.z || pos.z > bounds.max.z) {
+            continue;
+        }
+
+        SECTOR *const candidate =
+            Room_GetWorldSector(room, pos.x, pos.z);
+        if (candidate->floor.is_split) {
+            *room_num = i;
+            return candidate;
+        }
+    }
+
+    return sector;
+}
+
 void Room_SetAbyssHeight(const int32_t height)
 {
     // Once Lara reaches the min abyss height, she will be killed; she will
@@ -468,6 +501,72 @@ int32_t Room_GetHeightEx(
     }
 
     return height;
+}
+
+bool Room_GetSplitEdge(
+    const SECTOR *const sector, const XYZ_32 pos, const int32_t max_distance,
+    int16_t *const facing, int32_t *const height, XZ_32 *const point)
+{
+    if (!sector->floor.is_split) {
+        return false;
+    }
+
+    int16_t base_facing;
+    if (!Room_GetSplitEdgePlane(
+            sector->floor.split.type, pos, max_distance, &base_facing, point)) {
+        return false;
+    }
+
+    const int32_t probe_distance = 2;
+    const XYZ_32 edge_pos = {
+        .x = point->x,
+        .y = pos.y,
+        .z = point->z,
+    };
+    const XYZ_32 plus_pos =
+        XYZ_32_OffsetYaw(edge_pos, base_facing, probe_distance);
+    const XYZ_32 minus_pos =
+        XYZ_32_OffsetYaw(edge_pos, base_facing + DEG_180, probe_distance);
+    const bool plus_is_solid =
+        M_IsPortalSolid(sector->floor, plus_pos.x, plus_pos.z);
+    const bool minus_is_solid =
+        M_IsPortalSolid(sector->floor, minus_pos.x, minus_pos.z);
+    const HEIGHT_TYPE previous_height_type = m_HeightType;
+    const int32_t plus_height = Room_GetFloorHeightForSector(
+        sector, plus_pos.x, plus_pos.z, true);
+    const int32_t minus_height = Room_GetFloorHeightForSector(
+        sector, minus_pos.x, minus_pos.z, true);
+    if (plus_height == NO_HEIGHT && minus_height == NO_HEIGHT) {
+        m_HeightType = previous_height_type;
+        return false;
+    }
+
+    bool plus_is_high;
+    if (plus_is_solid != minus_is_solid) {
+        plus_is_high = plus_is_solid;
+    } else if (plus_height == NO_HEIGHT) {
+        plus_is_high = false;
+    } else if (minus_height == NO_HEIGHT) {
+        plus_is_high = true;
+    } else {
+        const int32_t height_delta = plus_height - minus_height;
+        if (ABS(height_delta) < STEP_L / 2) {
+            m_HeightType = previous_height_type;
+            return false;
+        }
+        plus_is_high = height_delta < 0;
+    }
+
+    if (plus_is_solid != minus_is_solid
+        && (plus_is_high ? plus_height : minus_height) == NO_HEIGHT) {
+        m_HeightType = previous_height_type;
+        return false;
+    }
+
+    *facing = plus_is_high ? base_facing : base_facing + DEG_180;
+    *height = plus_is_high ? plus_height : minus_height;
+    m_HeightType = previous_height_type;
+    return true;
 }
 
 int32_t Room_GetCeiling(const SECTOR *const sector, const XYZ_32 pos)
