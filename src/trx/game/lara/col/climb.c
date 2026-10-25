@@ -28,6 +28,7 @@
 #define M_CORNER_SIDE_SHIFT      16
 #define M_CORNER_FRONT_DIST      (LARA_RADIUS + M_CORNER_SIDE_SHIFT) // = 116
 #define M_CORNER_MAX_DROP        (STEP_L * 3)                        // = 768
+#define M_CORNER_SEARCH_NEAR_STEP 4
 // clang-format on
 
 typedef enum {
@@ -68,7 +69,7 @@ static XYZ_32 M_GetClimbPos(
     return (XYZ_32) { pos.x + front, pos.y, pos.z + front };
 }
 
-static bool M_GetDiagonalHangEdge(
+static bool M_FindDiagonalHangEdge(
     const ITEM *const item, const int32_t max_distance, int16_t *const facing,
     int32_t *const height, XZ_32 *const point)
 {
@@ -87,6 +88,15 @@ static bool M_GetDiagonalHangEdge(
         Room_GetSplitEdgeSector(front_pos, &room_num);
     const bool found = Room_GetSplitEdge(
         sector, front_pos, max_distance, facing, height, point);
+    return found;
+}
+
+static bool M_GetDiagonalHangEdge(
+    const ITEM *const item, const int32_t max_distance, int16_t *const facing,
+    int32_t *const height, XZ_32 *const point)
+{
+    const bool found = M_FindDiagonalHangEdge(
+        item, max_distance, facing, height, point);
     const int32_t angle_delta =
         found ? (int16_t)(*facing - item->rot.y) : 0;
     const bool aligned = found
@@ -95,11 +105,8 @@ static bool M_GetDiagonalHangEdge(
         || item->current_anim_state == LS(LS_SHIMMY_RIGHT)) {
         LOG_DEBUG(
             "diagonal shimmy edge probe: pos=(%d,%d,%d) "
-            "front=(%d,%d,%d) start_room=%d room=%d "
-            "split=%d type=%d found=%d facing=%d aligned=%d",
-            item->pos.x, item->pos.y, item->pos.z, front_pos.x, front_pos.y,
-            front_pos.z, start_room_num, room_num, sector->floor.is_split,
-            sector->floor.split.type, found,
+            "found=%d facing=%d aligned=%d",
+            item->pos.x, item->pos.y, item->pos.z, found,
             found ? *facing : 0, aligned);
     }
     if (!aligned) {
@@ -448,57 +455,71 @@ static int32_t M_TestDiagonalHangCorner(
     ITEM *const item, COLL_INFO *const coll, const bool right)
 {
     if (M_IsHangingOnLadder(item, coll)) {
+        if (g_Input.action) {
+            LOG_DEBUG(
+                "diagonal corner rejected: classified as ladder at "
+                "pos=(%d,%d) facing=%d",
+                item->pos.x, item->pos.z, item->rot.y);
+        }
         return 0;
     }
 
     LARA_INFO *const lara = Lara_GetLaraInfo();
     const XYZ_32 old_pos = item->pos;
     const int16_t old_rot = item->rot.y;
-    const int16_t turn_steps[] = {
-        right ? DEG_45 : -DEG_45,
-        right ? -DEG_45 : DEG_45,
-    };
-    for (size_t i = 0; i < ARRAY_SIZE(turn_steps); i++) {
-        const int16_t target_rot = old_rot + turn_steps[i];
-        item->rot.y = target_rot;
+    const int16_t tangent = old_rot + (right ? DEG_90 : -DEG_90);
+    const int32_t search_step = WALL_L / 8;
+    const int32_t max_distance = WALL_L * 3 / 2;
+    const int16_t expected_diagonal_turn = right ? -DEG_90 : DEG_90;
+    int32_t edge_candidates = 0;
+    int32_t valid_edge_candidates = 0;
+    for (int32_t distance = 0; distance <= max_distance;) {
+        const XYZ_32 probe_pos = XYZ_32_OffsetYaw(old_pos, tangent, distance);
+        item->pos = probe_pos;
+        item->rot.y = old_rot;
+        lara->move_angle = old_rot;
+
         int16_t edge_facing;
         int32_t edge_height;
         XZ_32 edge_point;
-        const bool found_edge = M_GetDiagonalHangEdge(
-            item, LARA_RADIUS * 2, &edge_facing, &edge_height, &edge_point);
-        (void)edge_height;
-        if (!found_edge) {
-            LOG_DEBUG(
-                "hang corner diagonal edge not found: from=(%d,%d) "
-                "facing=%d turn=%d",
-                old_pos.x, old_pos.z, target_rot, right);
-            item->rot.y = old_rot;
-            continue;
+        if (M_FindDiagonalHangEdge(
+                item, LARA_RADIUS * 2, &edge_facing, &edge_height,
+                &edge_point)) {
+            const int16_t turn = (int16_t)(edge_facing - old_rot);
+            if (turn == expected_diagonal_turn) {
+                edge_candidates++;
+                const XYZ_32 candidate = XYZ_32_OffsetYaw(
+                    (XYZ_32) { edge_point.x, old_pos.y, edge_point.z },
+                    edge_facing + DEG_180, LARA_RADIUS);
+                item->pos = candidate;
+                item->rot.y = edge_facing;
+                lara->move_angle = edge_facing;
+                if (M_IsValidHangPos(item, coll)) {
+                    valid_edge_candidates++;
+                    lara->corner_pos = (XZ_32) { candidate.x, candidate.z };
+                    lara->corner_rot = turn;
+                    item->pos = old_pos;
+                    item->rot.y = old_rot;
+                    lara->move_angle = old_rot;
+                    return 1;
+                }
+            }
+            (void)edge_height;
         }
-
-        const XYZ_32 candidate = XYZ_32_OffsetYaw(
-            (XYZ_32) { edge_point.x, old_pos.y, edge_point.z },
-            edge_facing + DEG_180, LARA_RADIUS);
-        item->pos = candidate;
-        item->rot.y = edge_facing;
-        lara->move_angle = edge_facing;
-        const bool valid = M_IsValidHangPos(item, coll);
+        // Split-edge sector selection can change within a few units at an
+        // intersection, so keep the near-corner search finer than a sector.
+        distance += distance < LARA_RADIUS * 2 ? M_CORNER_SEARCH_NEAR_STEP
+                                               : search_step;
+    }
+    item->pos = old_pos;
+    item->rot.y = old_rot;
+    lara->move_angle = old_rot;
+    if (g_Input.action) {
         LOG_DEBUG(
-            "hang corner candidate: from=(%d,%d) edge=(%d,%d) "
-            "target=(%d,%d) facing=%d valid=%d",
-            old_pos.x, old_pos.z, edge_point.x, edge_point.z, candidate.x,
-            candidate.z, edge_facing, valid);
-        if (valid) {
-            lara->corner_pos = (XZ_32) { candidate.x, candidate.z };
-            lara->corner_rot = edge_facing - old_rot;
-            item->pos = old_pos;
-            item->rot.y = old_rot;
-            lara->move_angle = old_rot;
-            return 1;
-        }
-        item->pos = old_pos;
-        item->rot.y = old_rot;
-        lara->move_angle = old_rot;
+            "diagonal corner rejected: right=%d from=(%d,%d) facing=%d "
+            "edge_candidates=%d valid_edges=%d",
+            right, old_pos.x, old_pos.z, old_rot, edge_candidates,
+            valid_edge_candidates);
     }
     return 0;
 }
@@ -674,10 +695,10 @@ static bool M_TryCornerShimmy(ITEM *const item, COLL_INFO *const coll)
     const bool alive = item->hit_points > 0;
     const bool hanging_anim = Item_TestAnimEqual(item, LA(LA_REACH_TO_HANG));
     const bool hang_frame = Item_TestFrameEqual(item, M_LF_HANG);
-    // Diagonal-to-flat transitions are part of diagonal ledge support, while
-    // the setting continues to gate ordinary cardinal corner shimmying.
+    // Diagonal corner shimmy uses only the diagonal-edge test below; the
+    // cardinal corner test is reserved for cardinal ledges.
     if ((!Lara_Col_IsCornerShimmyActive() && !diagonal) || !action || !alive
-        || !hanging_anim || !hang_frame) {
+        || !hanging_anim || (!diagonal && !hang_frame)) {
         if (diagonal) {
             LOG_DEBUG(
                 "diagonal hang corner skipped: setting=%d action=%d alive=%d "
@@ -707,25 +728,6 @@ static bool M_TryCornerShimmy(ITEM *const item, COLL_INFO *const coll)
         item->goal_anim_state =
             LS(left ? LS_SHIMMY_INNER_LEFT : LS_SHIMMY_INNER_RIGHT);
         return true;
-    }
-
-    if (diagonal) {
-        corner_result = M_TestHangCorner(item, coll, !left);
-        LOG_DEBUG(
-            "diagonal hang corner test: direction=%s result=%d "
-            "pos=(%d,%d) facing=%d",
-            left ? "left" : "right", corner_result, item->pos.x, item->pos.z,
-            item->rot.y);
-        if (corner_result > 0) {
-            item->goal_anim_state =
-                LS(left ? LS_SHIMMY_OUTER_LEFT : LS_SHIMMY_OUTER_RIGHT);
-            return true;
-        }
-        if (corner_result < 0) {
-            item->goal_anim_state =
-                LS(left ? LS_SHIMMY_INNER_LEFT : LS_SHIMMY_INNER_RIGHT);
-            return true;
-        }
     }
 
     if (M_CanHangSideways(item, coll, left ? -DEG_90 : DEG_90)) {
